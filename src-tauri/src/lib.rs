@@ -4,7 +4,9 @@ mod tracker;
 
 use chrono::{NaiveDate, Utc};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tokio::time::{interval, Duration};
 use uuid::Uuid;
 
@@ -21,16 +23,34 @@ pub struct AppState {
 
 // Tauri commands
 #[tauri::command]
-async fn start_tracking(state: State<'_, AppState>) -> Result<(), String> {
-    let mut is_tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
-    *is_tracking = true;
+async fn start_tracking(state: State<'_, AppState>, app_handle: AppHandle) -> Result<(), String> {
+    {
+        let mut is_tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
+        *is_tracking = true;
+    } // MutexGuard is dropped here
+
+    // Update tray menu and emit event to frontend
+    update_tray_menu(&app_handle, true).await?;
+    app_handle
+        .emit("tracking-status-changed", true)
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-async fn stop_tracking(state: State<'_, AppState>) -> Result<(), String> {
-    let mut is_tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
-    *is_tracking = false;
+async fn stop_tracking(state: State<'_, AppState>, app_handle: AppHandle) -> Result<(), String> {
+    {
+        let mut is_tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
+        *is_tracking = false;
+    } // MutexGuard is dropped here
+
+    // Update tray menu and emit event to frontend
+    update_tray_menu(&app_handle, false).await?;
+    app_handle
+        .emit("tracking-status-changed", false)
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -133,6 +153,91 @@ async fn get_timeline_data(
         .get_recent_timeline(timeline_minutes)
         .await
         .map_err(|e| format!("Database error: {}", e))
+}
+
+#[tauri::command]
+async fn show_window(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_window(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn toggle_tracking(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<bool, String> {
+    let new_status = {
+        let mut is_tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
+        *is_tracking = !*is_tracking;
+        *is_tracking
+    };
+
+    // Update tray menu and emit event to frontend
+    update_tray_menu(&app_handle, new_status).await?;
+    app_handle
+        .emit("tracking-status-changed", new_status)
+        .map_err(|e| e.to_string())?;
+
+    Ok(new_status)
+}
+
+async fn update_tray_menu(app_handle: &AppHandle, is_tracking: bool) -> Result<(), String> {
+    use tauri::menu::{Menu, MenuItem};
+
+    let status_text = if is_tracking {
+        "🟢 Tracking Active"
+    } else {
+        "🔴 Tracking Paused"
+    };
+
+    let toggle_text = if is_tracking {
+        "Pause Tracking"
+    } else {
+        "Start Tracking"
+    };
+
+    // Create menu items
+    let status_item = MenuItem::with_id(app_handle, "status", status_text, false, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let toggle_item = MenuItem::with_id(app_handle, "toggle", toggle_text, true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let dashboard_item =
+        MenuItem::with_id(app_handle, "dashboard", "Dashboard", true, None::<&str>)
+            .map_err(|e| e.to_string())?;
+    let quit_item = MenuItem::with_id(app_handle, "quit", "Quit", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+
+    let menu = Menu::with_items(
+        app_handle,
+        &[&status_item, &toggle_item, &dashboard_item, &quit_item],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Update the tray menu
+    if let Some(tray) = app_handle.tray_by_id("main") {
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+
+        // Update tooltip to reflect current status
+        let tooltip = if is_tracking {
+            "Velosi Tracker - Tracking Active"
+        } else {
+            "Velosi Tracker - Tracking Paused"
+        };
+        tray.set_tooltip(Some(tooltip)).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 async fn setup_database() -> Result<Database, Box<dyn std::error::Error>> {
@@ -328,6 +433,81 @@ pub fn run() {
 
             app.manage(state);
 
+            // Create initial tray menu
+            let status_item =
+                MenuItem::with_id(app, "status", "🟢 Tracking Active", false, None::<&str>)?;
+            let toggle_item =
+                MenuItem::with_id(app, "toggle", "Pause Tracking", true, None::<&str>)?;
+            let dashboard_item =
+                MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(
+                app,
+                &[&status_item, &toggle_item, &dashboard_item, &quit_item],
+            )?;
+
+            // Setup tray icon
+            let _tray = TrayIconBuilder::with_id("main")
+                .tooltip("Velosi Tracker - Tracking Active")
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "toggle" => {
+                        let app_clone = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let app_handle = app_clone.clone();
+                            let state: State<'_, AppState> = app_clone.state();
+                            if let Err(e) = toggle_tracking(state, app_handle).await {
+                                eprintln!("Failed to toggle tracking: {}", e);
+                            }
+                        });
+                    }
+                    "dashboard" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Handle window close event to hide instead of quit
+            if let Some(window) = app.get_webview_window("main") {
+                let app_handle_clone = app_handle.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        // Prevent the window from closing
+                        api.prevent_close();
+                        // Hide the window instead
+                        if let Some(window) = app_handle_clone.get_webview_window("main") {
+                            let _ = window.hide();
+                        }
+                    }
+                });
+            }
+
             // Start background tracking outside the blocking context
             println!("🚀 About to spawn activity tracking task...");
             let handle_clone = app_handle.clone();
@@ -349,7 +529,10 @@ pub fn run() {
             get_activities_by_date,
             get_activity_summary,
             get_recent_activities,
-            get_timeline_data
+            get_timeline_data,
+            show_window,
+            hide_window,
+            toggle_tracking
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

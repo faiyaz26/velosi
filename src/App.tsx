@@ -23,7 +23,7 @@ function App() {
 
   const handleMinimize = async () => {
     try {
-      await invoke("hide_main_window");
+      await invoke("hide_window");
     } catch (error) {
       console.error("Failed to minimize window:", error);
     }
@@ -31,7 +31,7 @@ function App() {
 
   const handleClose = async () => {
     try {
-      await invoke("quit_app");
+      await invoke("hide_window");
     } catch (error) {
       console.error("Failed to close app:", error);
     }

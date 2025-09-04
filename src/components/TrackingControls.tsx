@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect } from "react";
 import { Play, Pause, Activity, Shield } from "lucide-react";
 
@@ -31,6 +32,14 @@ export function TrackingControls() {
     // Check initial tracking status
     invoke<boolean>("get_tracking_status").then(setIsTracking);
 
+    // Listen for tracking status changes from tray or other sources
+    const unlistenPromise = listen<boolean>(
+      "tracking-status-changed",
+      (event) => {
+        setIsTracking(event.payload);
+      }
+    );
+
     // Set up interval to get current activity
     const interval = setInterval(async () => {
       if (isTracking) {
@@ -45,7 +54,11 @@ export function TrackingControls() {
       }
     }, 2000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      // Clean up event listener
+      unlistenPromise.then((unlisten) => unlisten());
+    };
   }, [isTracking]);
 
   const handleStartTracking = async () => {
