@@ -7,9 +7,10 @@ import {
 } from "@/components/ActivityDashboard";
 import { DateSelector } from "@/components/DateSelector";
 import { TimelineChart } from "@/components/TimelineChart";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Minimize2, X } from "lucide-react";
 
 function App() {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -19,6 +20,22 @@ function App() {
   ] = useState<ActivitySummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const handleMinimize = async () => {
+    try {
+      await invoke("hide_main_window");
+    } catch (error) {
+      console.error("Failed to minimize window:", error);
+    }
+  };
+
+  const handleClose = async () => {
+    try {
+      await invoke("quit_app");
+    } catch (error) {
+      console.error("Failed to close app:", error);
+    }
+  };
 
   useEffect(() => {
     loadActivitySummary(selectedDate);
@@ -61,29 +78,23 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-4xl font-bold">Velosi Tracker</h1>
-          <p className="text-muted-foreground mt-2">
-            Track your productivity and understand how you spend your time
-          </p>
-          {lastUpdated && (
-            <p className="text-sm text-muted-foreground mt-1">
-              Last updated: {format(lastUpdated, "HH:mm:ss")}
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Top bar */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              {format(new Date(), "EEEE, MMMM d, yyyy")}
             </p>
-          )}
-        </div>
-
-        {/* Controls */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <TrackingControls />
-          <DateSelector
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
-          />
-          <div className="flex items-center justify-center lg:justify-end">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Velosi Tracker
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <DateSelector
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+            />
             <Button
               onClick={handleRefresh}
               disabled={loading}
@@ -94,22 +105,54 @@ function App() {
               <RefreshCw
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
               />
-              Refresh Data
+              Refresh
+            </Button>
+            <ThemeToggle />
+            <Button
+              onClick={handleMinimize}
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-1"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={handleClose}
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-1"
+            >
+              <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        {/* Timeline Chart */}
+        {lastUpdated && (
+          <p className="text-xs text-muted-foreground">
+            Last updated {format(lastUpdated, "HH:mm:ss")}
+          </p>
+        )}
+
+        {/* Timeline across top */}
         <TimelineChart minutes={30} />
 
-        {/* Dashboard */}
-        {loading ? (
-          <div className="text-center p-8">
-            <p className="text-muted-foreground">Loading activity data...</p>
+        {/* Main grid below like the screenshot: left controls/activity, right analytics */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-6 lg:col-span-1">
+            <TrackingControls />
           </div>
-        ) : (
-          <ActivityDashboard summary={activitySummary} />
-        )}
+          <div className="lg:col-span-2">
+            {loading ? (
+              <div className="text-center p-8">
+                <p className="text-muted-foreground">
+                  Loading activity data...
+                </p>
+              </div>
+            ) : (
+              <ActivityDashboard summary={activitySummary} />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

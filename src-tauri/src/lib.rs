@@ -135,12 +135,6 @@ async fn get_timeline_data(
         .map_err(|e| format!("Database error: {}", e))
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 async fn setup_database() -> Result<Database, Box<dyn std::error::Error>> {
     // Create data directory if it doesn't exist
     let app_data_dir = dirs::data_dir()
@@ -346,7 +340,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             start_tracking,
             stop_tracking,
             get_tracking_status,

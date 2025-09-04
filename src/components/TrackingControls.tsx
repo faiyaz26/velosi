@@ -24,7 +24,7 @@ export function TrackingControls() {
     currentActivity,
     setCurrentActivity,
   ] = useState<CurrentActivity | null>(null);
-  const [permissionStatus, setPermissionStatus] = useState<string>("");
+  // Permission status is surfaced via alert for now; no need to store in state
   const [testingPermissions, setTestingPermissions] = useState(false);
 
   useEffect(() => {
@@ -71,11 +71,9 @@ export function TrackingControls() {
     setTestingPermissions(true);
     try {
       const result = await invoke<string>("test_permissions");
-      setPermissionStatus(result);
       alert(result); // Show result in alert for now
     } catch (error) {
       const errorMsg = `Failed to test permissions: ${error}`;
-      setPermissionStatus(errorMsg);
       alert(errorMsg);
     } finally {
       setTestingPermissions(false);

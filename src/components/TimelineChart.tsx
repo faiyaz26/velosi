@@ -88,12 +88,12 @@ export function TimelineChart({ minutes = 30 }: TimelineChartProps) {
   const getCategoryColor = (category: string) => {
     const colors = {
       Development: "bg-blue-500",
-      Productive: "bg-green-500",
-      Communication: "bg-yellow-500",
-      Social: "bg-purple-500",
-      Entertainment: "bg-red-500",
-      Unknown: "bg-gray-500",
-    };
+      Productive: "bg-emerald-500",
+      Communication: "bg-amber-500",
+      Social: "bg-fuchsia-500",
+      Entertainment: "bg-rose-500",
+      Unknown: "bg-muted-foreground",
+    } as const;
     return colors[category as keyof typeof colors] || colors.Unknown;
   };
 
@@ -170,7 +170,7 @@ export function TimelineChart({ minutes = 30 }: TimelineChartProps) {
             </div>
 
             {/* Timeline Bar */}
-            <div className="relative h-8 bg-gray-100 rounded-lg mb-4">
+            <div className="relative h-8 bg-muted rounded-lg mb-4 overflow-hidden">
               {timelineData.activities.map((activity) => {
                 const position = getTimelinePosition(
                   activity.start_time,
@@ -197,9 +197,9 @@ export function TimelineChart({ minutes = 30 }: TimelineChartProps) {
             {/* Activity List */}
             <div className="space-y-2">
               {timelineData.activities.map((activity) => (
-                <div key={activity.id} className="border rounded-lg">
+                <div key={activity.id} className="border rounded-lg bg-card">
                   <div
-                    className="p-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
+                    className="p-3 cursor-pointer hover:bg-muted/60 flex items-center justify-between"
                     onClick={() => toggleActivity(activity.id)}
                   >
                     <div className="flex items-center gap-3">
@@ -260,7 +260,7 @@ export function TimelineChart({ minutes = 30 }: TimelineChartProps) {
                                   </span>
                                 </div>
                                 {segment.url && (
-                                  <div className="text-xs text-blue-600 truncate ml-2">
+                                  <div className="text-xs text-blue-500 truncate ml-2">
                                     {segment.url}
                                   </div>
                                 )}

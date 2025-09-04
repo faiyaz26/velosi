@@ -238,9 +238,9 @@ export function ActivityDashboard({ summary }: ActivityDashboardProps) {
               >
                 <div className="flex-1">
                   <p className="font-medium">{app.app_name}</p>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                  <div className="w-full bg-muted rounded-full h-2 mt-1">
                     <div
-                      className="bg-blue-600 h-2 rounded-full"
+                      className="bg-primary h-2 rounded-full"
                       style={{ width: `${app.percentage}%` }}
                     />
                   </div>
