@@ -82,6 +82,19 @@ async fn test_permissions(state: State<'_, AppState>) -> Result<String, String> 
 }
 
 #[tauri::command]
+async fn get_permission_status(state: State<'_, AppState>) -> Result<bool, String> {
+    let tracker = state.tracker.lock().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    {
+        Ok(tracker.check_accessibility_permissions())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(true) // Assume permissions are granted on non-macOS systems
+    }
+}
+
+#[tauri::command]
 async fn update_user_activity(state: State<'_, AppState>) -> Result<(), String> {
     let mut tracker = state.tracker.lock().map_err(|e| e.to_string())?;
     tracker.update_last_input_time();
@@ -525,6 +538,7 @@ pub fn run() {
             get_tracking_status,
             get_current_activity,
             test_permissions,
+            get_permission_status,
             update_user_activity,
             get_activities_by_date,
             get_activity_summary,

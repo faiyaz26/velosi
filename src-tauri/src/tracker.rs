@@ -21,10 +21,10 @@ pub struct CurrentActivity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
-    pub title: String,         // Tab title, file name, etc.
-    pub url: Option<String>,   // URL for browser tabs
+    pub title: String,             // Tab title, file name, etc.
+    pub url: Option<String>,       // URL for browser tabs
     pub file_path: Option<String>, // File path for editors
-    pub metadata: Option<String>, // Additional metadata
+    pub metadata: Option<String>,  // Additional metadata
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +73,7 @@ impl ActivityTracker {
     }
 
     #[cfg(target_os = "macos")]
-    fn check_accessibility_permissions(&self) -> bool {
+    pub fn check_accessibility_permissions(&self) -> bool {
         // Simple test to see if we have accessibility permissions
         let test_script = r#"
             tell application "System Events"
@@ -475,7 +475,7 @@ impl ActivityTracker {
         url: &Option<String>,
     ) -> Option<SegmentInfo> {
         // Extract detailed segment information based on app type
-        
+
         // Browser tabs
         if self.is_browser_app(app_name, bundle_id) {
             if let Some(url_str) = url {
@@ -490,7 +490,7 @@ impl ActivityTracker {
                 } else {
                     url_str.clone()
                 };
-                
+
                 return Some(SegmentInfo {
                     segment_type: SegmentType::BrowserTab,
                     title,
@@ -500,10 +500,13 @@ impl ActivityTracker {
                 });
             }
         }
-        
+
         // Code editors (VS Code, etc.)
-        if app_name.contains("Visual Studio Code") || 
-           bundle_id.as_ref().map_or(false, |id| id.contains("com.microsoft.VSCode")) {
+        if app_name.contains("Visual Studio Code")
+            || bundle_id
+                .as_ref()
+                .map_or(false, |id| id.contains("com.microsoft.VSCode"))
+        {
             // Extract file path from window title
             // VS Code window titles often look like: "filename.ext - folder - Visual Studio Code"
             if let Some(file_info) = self.extract_vscode_file_info(window_title) {
@@ -516,7 +519,7 @@ impl ActivityTracker {
                 });
             }
         }
-        
+
         // Terminal sessions
         if app_name.contains("Terminal") || app_name.contains("iTerm") {
             return Some(SegmentInfo {
@@ -527,7 +530,7 @@ impl ActivityTracker {
                 metadata: None,
             });
         }
-        
+
         // Generic app window
         Some(SegmentInfo {
             segment_type: SegmentType::AppWindow,
@@ -542,7 +545,7 @@ impl ActivityTracker {
     fn extract_vscode_file_info(&self, window_title: &str) -> Option<String> {
         // Extract file path/name from VS Code window title
         // Patterns: "file.ext - folder" or "● file.ext - folder" (● indicates unsaved)
-        
+
         if window_title.contains(" - ") {
             let parts: Vec<&str> = window_title.split(" - ").collect();
             if !parts.is_empty() {
@@ -554,7 +557,7 @@ impl ActivityTracker {
                 return Some(file_part.to_string());
             }
         }
-        
+
         // Fallback: return the full window title
         Some(window_title.to_string())
     }

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect } from "react";
-import { Play, Pause, Activity, Shield } from "lucide-react";
+import { Play, Pause, Activity } from "lucide-react";
 
 interface CurrentActivity {
   app_name: string;
@@ -25,8 +25,6 @@ export function TrackingControls() {
     currentActivity,
     setCurrentActivity,
   ] = useState<CurrentActivity | null>(null);
-  // Permission status is surfaced via alert for now; no need to store in state
-  const [testingPermissions, setTestingPermissions] = useState(false);
 
   useEffect(() => {
     // Check initial tracking status
@@ -80,19 +78,6 @@ export function TrackingControls() {
     }
   };
 
-  const handleTestPermissions = async () => {
-    setTestingPermissions(true);
-    try {
-      const result = await invoke<string>("test_permissions");
-      alert(result); // Show result in alert for now
-    } catch (error) {
-      const errorMsg = `Failed to test permissions: ${error}`;
-      alert(errorMsg);
-    } finally {
-      setTestingPermissions(false);
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -122,16 +107,6 @@ export function TrackingControls() {
           >
             <Pause className="h-4 w-4" />
             Stop Tracking
-          </Button>
-          <Button
-            onClick={handleTestPermissions}
-            disabled={testingPermissions}
-            variant="secondary"
-            size="sm"
-            className="flex items-center gap-2"
-          >
-            <Shield className="h-4 w-4" />
-            {testingPermissions ? "Testing..." : "Test Permissions"}
           </Button>
         </div>
 
