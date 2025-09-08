@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { parseISO, format, isValid } from "date-fns";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { useCategoryService } from "../hooks/useCategoryService";
 
 interface ActivityEntry {
   id: string;
@@ -27,10 +28,23 @@ interface TimelineChartProps {
   onActivityClick?: (activity: ActivityEntry) => void;
 }
 
-// Small helper to color categories consistently
-const categoryColor = (cat: any): string => {
+// Small helper to color categories consistently using category service
+const getCategoryColor = (
+  cat: any,
+  isInitialized: boolean,
+  categoryService: any
+): string => {
   const key =
     typeof cat === "string" ? cat : Object.keys(cat || {})[0] || "Unknown";
+
+  if (isInitialized && categoryService) {
+    const categoryInfo = categoryService.getCategoryById(key.toLowerCase());
+    if (categoryInfo) {
+      return categoryInfo.color;
+    }
+  }
+
+  // Fallback colors if category service hasn't loaded
   switch (key) {
     case "Productive":
       return "#22d3ee"; // cyan
@@ -55,6 +69,7 @@ export function TimelineChart({
     selectedActivity,
     setSelectedActivity,
   ] = useState<ActivityEntry | null>(null);
+  const { isInitialized, categoryService } = useCategoryService();
 
   const safeActivities = (activities || []).filter((a) => {
     const s = parseISO(a.start_time);
@@ -94,7 +109,11 @@ export function TimelineChart({
       if (hourlyData[hour]) {
         hourlyData[hour].activities.push(activity);
         hourlyData[hour].totalDuration += duration;
-        hourlyData[hour].color = categoryColor(activity.category);
+        hourlyData[hour].color = getCategoryColor(
+          activity.category,
+          isInitialized,
+          categoryService
+        );
       }
     });
 
@@ -194,7 +213,11 @@ export function TimelineChart({
                 className="h-full cursor-pointer hover:opacity-80 transition-opacity"
                 style={{
                   width: `${widthPercentage}%`,
-                  backgroundColor: categoryColor(activity.category),
+                  backgroundColor: getCategoryColor(
+                    activity.category,
+                    isInitialized,
+                    categoryService
+                  ),
                 }}
                 onClick={() => handleBarClick({ activities: [activity] })}
                 title={`${activity.app_name} - ${Math.round(duration)}m`}
@@ -216,7 +239,7 @@ export function TimelineChart({
                   ? format(parseISO(selectedActivity.end_time), "HH:mm")
                   : "ongoing"}
               </div>
-              <div className="mt-1 truncate">
+              <div className="mt-1 break-words">
                 {selectedActivity.window_title}
               </div>
             </div>

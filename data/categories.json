@@ -1,0 +1,74 @@
+{
+  "categories": [
+    {
+      "id": "development",
+      "name": "Development",
+      "description": "Code editors, IDEs, development tools, and programming-related applications",
+      "color": "#3b82f6",
+      "icon": "code"
+    },
+    {
+      "id": "productive",
+      "name": "Productive",
+      "description": "Office applications, document editors, productivity tools, and work-related apps",
+      "color": "#10b981",
+      "icon": "briefcase"
+    },
+    {
+      "id": "communication",
+      "name": "Communication",
+      "description": "Email clients, messaging apps, video conferencing, and communication tools",
+      "color": "#f59e0b",
+      "icon": "message-circle"
+    },
+    {
+      "id": "social",
+      "name": "Social",
+      "description": "Social media platforms, forums, and social networking applications",
+      "color": "#ef4444",
+      "icon": "users"
+    },
+    {
+      "id": "entertainment",
+      "name": "Entertainment",
+      "description": "Media players, games, streaming services, and entertainment applications",
+      "color": "#8b5cf6",
+      "icon": "play"
+    },
+    {
+      "id": "utility",
+      "name": "Utility",
+      "description": "System utilities, file managers, system preferences, and maintenance tools",
+      "color": "#06b6d4",
+      "icon": "settings"
+    },
+    {
+      "id": "design",
+      "name": "Design",
+      "description": "Design tools, image editors, vector graphics, and creative applications",
+      "color": "#ec4899",
+      "icon": "palette"
+    },
+    {
+      "id": "education",
+      "name": "Education",
+      "description": "Learning platforms, educational tools, documentation, and research applications",
+      "color": "#84cc16",
+      "icon": "book"
+    },
+    {
+      "id": "finance",
+      "name": "Finance",
+      "description": "Banking apps, budgeting tools, trading platforms, and financial applications",
+      "color": "#22c55e",
+      "icon": "dollar-sign"
+    },
+    {
+      "id": "unknown",
+      "name": "Unknown",
+      "description": "Applications that haven't been categorized yet or don't fit other categories",
+      "color": "#6b7280",
+      "icon": "help-circle"
+    }
+  ]
+}

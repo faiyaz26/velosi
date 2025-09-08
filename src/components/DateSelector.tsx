@@ -3,16 +3,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { format, subDays, isAfter, startOfDay } from "date-fns";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 
 interface DateSelectorProps {
   selectedDate: Date;
   onDateChange: (date: Date) => void;
+  onRefresh?: () => void;
+  loading?: boolean;
 }
 
 export function DateSelector({
   selectedDate,
   onDateChange,
+  onRefresh,
+  loading = false,
 }: DateSelectorProps) {
   const [inputDate, setInputDate] = useState(
     format(selectedDate, "yyyy-MM-dd")
@@ -53,10 +57,26 @@ export function DateSelector({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calendar className="h-5 w-5" />
-          Select Date
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Select Date
+          </CardTitle>
+          {onRefresh && (
+            <Button
+              onClick={onRefresh}
+              disabled={loading}
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-2">

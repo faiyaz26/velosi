@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import { Clock, TrendingUp, Zap } from "lucide-react";
 import { format } from "date-fns";
+import { useCategoryService } from "@/hooks/useCategoryService";
 
 export interface ActivityCategory {
   Productive?: null;
@@ -71,12 +72,68 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-function getCategoryName(category: ActivityCategory): string {
-  const keys = Object.keys(category);
-  return keys.length > 0 ? keys[0] : "Unknown";
+function getCategoryName(
+  category: ActivityCategory,
+  categoryService: any,
+  isInitialized: boolean
+): string {
+  let categoryKey = "unknown";
+
+  // Handle both string and object category formats
+  if (typeof category === "string") {
+    categoryKey = category;
+  } else if (typeof category === "object" && category) {
+    const keys = Object.keys(category);
+    categoryKey = keys.length > 0 ? keys[0] : "unknown";
+  }
+
+  if (isInitialized && categoryService) {
+    const categoryInfo = categoryService.getCategoryById(
+      categoryKey.toLowerCase()
+    );
+    if (categoryInfo) {
+      return categoryInfo.name;
+    }
+  }
+
+  // Fallback to the original enum name (e.g., "Social", "Development")
+  return categoryKey;
+}
+
+function getCategoryColor(
+  category: ActivityCategory,
+  categoryService: any,
+  isInitialized: boolean
+): string {
+  let categoryKey = "unknown";
+
+  // Handle both string and object category formats
+  if (typeof category === "string") {
+    categoryKey = category;
+  } else if (typeof category === "object" && category) {
+    const keys = Object.keys(category);
+    categoryKey = keys.length > 0 ? keys[0] : "unknown";
+  }
+
+  if (isInitialized && categoryService) {
+    const categoryInfo = categoryService.getCategoryById(
+      categoryKey.toLowerCase()
+    );
+    if (categoryInfo) {
+      return categoryInfo.color;
+    }
+  }
+
+  // Fallback to hardcoded colors using the original enum name
+  const color =
+    CATEGORY_COLORS[categoryKey as keyof typeof CATEGORY_COLORS] ||
+    CATEGORY_COLORS.Unknown;
+  return color;
 }
 
 export function ActivityDashboard({ summary }: ActivityDashboardProps) {
+  const { isInitialized, categoryService } = useCategoryService();
+
   if (!summary) {
     return (
       <Card>
@@ -93,15 +150,25 @@ export function ActivityDashboard({ summary }: ActivityDashboardProps) {
     );
   }
 
-  const pieData = summary.categories.map((cat) => ({
-    name: getCategoryName(cat.category),
-    value: cat.duration_seconds,
-    percentage: cat.percentage,
-    color:
-      CATEGORY_COLORS[
-        getCategoryName(cat.category) as keyof typeof CATEGORY_COLORS
-      ] || CATEGORY_COLORS.Unknown,
-  }));
+  const pieData = summary.categories.map((cat) => {
+    const categoryName = getCategoryName(
+      cat.category,
+      categoryService,
+      isInitialized
+    );
+    const categoryColor = getCategoryColor(
+      cat.category,
+      categoryService,
+      isInitialized
+    );
+
+    return {
+      name: categoryName,
+      value: cat.duration_seconds,
+      percentage: cat.percentage,
+      color: categoryColor,
+    };
+  });
 
   const barData = summary.top_apps.slice(0, 5).map((app) => ({
     name:

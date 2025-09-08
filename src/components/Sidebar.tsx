@@ -38,7 +38,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   return (
     <div
       className={cn(
-        "relative flex flex-col bg-card border-r border-border transition-all duration-300 flex-shrink-0",
+        "relative flex flex-col bg-card border-r border-border transition-all duration-300 flex-shrink-0 h-screen",
         isCollapsed ? "w-16 min-w-16 max-w-16" : "w-64 min-w-64 max-w-64"
       )}
     >

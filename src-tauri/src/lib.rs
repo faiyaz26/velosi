@@ -3,6 +3,7 @@ mod models;
 mod tracker;
 
 use chrono::{NaiveDate, Utc};
+use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -203,6 +204,70 @@ async fn toggle_tracking(
         .map_err(|e| e.to_string())?;
 
     Ok(new_status)
+}
+
+#[tauri::command]
+async fn load_categories() -> Result<Value, String> {
+    let categories_path = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("data")
+        .join("categories.json");
+
+    let categories_content = std::fs::read_to_string(categories_path)
+        .map_err(|e| format!("Failed to read categories.json: {}", e))?;
+
+    let categories: Value = serde_json::from_str(&categories_content)
+        .map_err(|e| format!("Failed to parse categories.json: {}", e))?;
+
+    Ok(categories)
+}
+
+#[tauri::command]
+async fn load_app_mappings() -> Result<Value, String> {
+    let mappings_path = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("data")
+        .join("app-mappings.json");
+
+    let mappings_content = std::fs::read_to_string(mappings_path)
+        .map_err(|e| format!("Failed to read app-mappings.json: {}", e))?;
+
+    let mappings: Value = serde_json::from_str(&mappings_content)
+        .map_err(|e| format!("Failed to parse app-mappings.json: {}", e))?;
+
+    Ok(mappings)
+}
+
+#[tauri::command]
+async fn update_activity_category(
+    activity_id: String,
+    category: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Updating activity {} to category {}", activity_id, category);
+
+    // Parse the category string into an ActivityCategory enum
+    let activity_category = match category.as_str() {
+        "development" => ActivityCategory::Development,
+        "productive" => ActivityCategory::Productive,
+        "communication" => ActivityCategory::Communication,
+        "social" => ActivityCategory::Social,
+        "entertainment" => ActivityCategory::Entertainment,
+        _ => ActivityCategory::Unknown,
+    };
+
+    let result = state
+        .db
+        .update_activity_category(&activity_id, &activity_category)
+        .await
+        .map_err(|e| e.to_string());
+
+    match &result {
+        Ok(_) => println!("Successfully updated activity category"),
+        Err(e) => println!("Failed to update activity category: {}", e),
+    }
+
+    result
 }
 
 async fn update_tray_menu(app_handle: &AppHandle, is_tracking: bool) -> Result<(), String> {
@@ -546,7 +611,10 @@ pub fn run() {
             get_timeline_data,
             show_window,
             hide_window,
-            toggle_tracking
+            toggle_tracking,
+            load_categories,
+            load_app_mappings,
+            update_activity_category
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

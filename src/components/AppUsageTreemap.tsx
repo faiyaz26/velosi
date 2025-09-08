@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Monitor } from "lucide-react";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { useCategoryService } from "@/hooks/useCategoryService";
 
 interface ActivityEntry {
   id: string;
@@ -48,6 +49,8 @@ const COLORS = [
 ];
 
 export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
+  const { isInitialized, categoryService } = useCategoryService();
+
   const treemapData = useMemo(() => {
     const appUsage = new Map<string, { duration: number; category: string }>();
 
@@ -57,7 +60,14 @@ export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
       const duration = end.getTime() - start.getTime();
 
       const existing = appUsage.get(activity.app_name);
-      const categoryName = Object.keys(activity.category)[0] || "Unknown";
+
+      // Handle both string and object category formats
+      let categoryName = "Unknown";
+      if (typeof activity.category === "string") {
+        categoryName = activity.category;
+      } else if (typeof activity.category === "object" && activity.category) {
+        categoryName = Object.keys(activity.category)[0] || "Unknown";
+      }
 
       if (existing) {
         existing.duration += duration;
@@ -75,10 +85,16 @@ export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
         const hours = Math.floor(totalMinutes / 60);
         const minutes = totalMinutes % 60;
 
+        // Get color from category service
+        const categoryInfo = isInitialized
+          ? categoryService.getCategoryById(data.category.toLowerCase())
+          : null;
+        const color = categoryInfo?.color || COLORS[index % COLORS.length];
+
         return {
           name: appName,
           value: totalMinutes,
-          fill: COLORS[index % COLORS.length],
+          fill: color,
           category: data.category,
           hours,
           minutes,
@@ -86,7 +102,7 @@ export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
       })
       .filter((item) => item.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [activities]);
+  }, [activities, isInitialized, categoryService]);
 
   console.log("Treemap data:", treemapData); // Debug log
 

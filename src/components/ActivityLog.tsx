@@ -11,14 +11,24 @@ import { Button } from "@/components/ui/button";
 import { DateSelector } from "@/components/DateSelector";
 import { TimelineChart } from "@/components/TimelineChart";
 import { AppUsageTreemap } from "@/components/AppUsageTreemap";
+import { RingChart } from "@/components/RingChart";
 import {
   Activity,
   Clock,
   Calendar,
   RefreshCw,
   ExternalLink,
+  Edit3,
+  Check,
+  X,
 } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
+import { useCategoryService } from "@/hooks/useCategoryService";
+import {
+  getCategoryColor,
+  getCategoryName,
+  getCategoryColorClass,
+} from "@/lib/utils";
 
 interface ActivityEntry {
   id: string;
@@ -31,17 +41,53 @@ interface ActivityEntry {
   category: any;
 }
 
+interface ActivityCategory {
+  Productive?: null;
+  Social?: null;
+  Entertainment?: null;
+  Development?: null;
+  Communication?: null;
+  Unknown?: null;
+}
+
+interface CategorySummary {
+  category: ActivityCategory;
+  duration_seconds: number;
+  percentage: number;
+}
+
+interface AppSummary {
+  app_name: string;
+  duration_seconds: number;
+  percentage: number;
+}
+
+interface ActivitySummary {
+  date: string;
+  total_active_time: number;
+  categories: CategorySummary[];
+  top_apps: AppSummary[];
+}
+
 export function ActivityLog() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const [
+    activitySummary,
+    setActivitySummary,
+  ] = useState<ActivitySummary | null>(null);
   const [
     selectedActivity,
     setSelectedActivity,
   ] = useState<ActivityEntry | null>(null);
   const [loading, setLoading] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const { isInitialized, categoryService } = useCategoryService();
 
   useEffect(() => {
     loadActivities(selectedDate);
+    loadActivitySummary();
   }, [selectedDate]);
 
   const loadActivities = async (date: Date) => {
@@ -60,8 +106,21 @@ export function ActivityLog() {
     }
   };
 
+  const loadActivitySummary = async () => {
+    try {
+      const result = await invoke<ActivitySummary>("get_activity_summary", {
+        date: format(selectedDate, "yyyy-MM-dd"),
+      });
+      setActivitySummary(result);
+    } catch (error) {
+      console.error("Failed to load activity summary:", error);
+      setActivitySummary(null);
+    }
+  };
+
   const handleRefresh = () => {
     loadActivities(selectedDate);
+    loadActivitySummary();
   };
 
   const formatDuration = (startTime: string, endTime?: string): string => {
@@ -78,22 +137,64 @@ export function ActivityLog() {
     return `${minutes}m`;
   };
 
-  const getCategoryColor = (category: any): string => {
-    const categoryName = Object.keys(category)[0] || "Unknown";
-    const colors: { [key: string]: string } = {
-      Development: "bg-blue-500",
-      Productive: "bg-green-500",
-      Communication: "bg-yellow-500",
-      Social: "bg-red-500",
-      Entertainment: "bg-purple-500",
-      Unknown: "bg-gray-500",
-    };
-    return colors[categoryName] || colors.Unknown;
+  const updateActivityCategory = async (
+    activityId: string,
+    categoryId: string
+  ) => {
+    try {
+      console.log(
+        "Updating category for activity:",
+        activityId,
+        "to:",
+        categoryId
+      );
+      await invoke("update_activity_category", {
+        activityId: activityId,
+        category: categoryId,
+      });
+      console.log("Category update successful");
+
+      // Refresh the activities to show the updated category
+      await loadActivities(selectedDate);
+      console.log("Activities reloaded after category update");
+
+      // Update the selected activity if it's the one we just changed
+      if (selectedActivity && selectedActivity.id === activityId) {
+        console.log("Refreshing selected activity data...");
+        const result = await invoke<ActivityEntry[]>("get_activities_by_date", {
+          date: format(selectedDate, "yyyy-MM-dd"),
+        });
+        const updatedActivity = result.find(
+          (a: ActivityEntry) => a.id === activityId
+        );
+        if (updatedActivity) {
+          console.log("Updated activity found:", updatedActivity);
+          console.log("Updated activity category:", updatedActivity.category);
+          setSelectedActivity(updatedActivity);
+        } else {
+          console.log("Updated activity not found in results");
+        }
+      }
+
+      setEditingCategory(false);
+      console.log("Category editing completed successfully");
+    } catch (error) {
+      console.error("Failed to update category:", error);
+      alert("Failed to update category: " + error);
+    }
   };
 
-  const getCategoryName = (category: any): string => {
-    return Object.keys(category)[0] || "Unknown";
-  };
+  // Prepare data for RingChart using common utility functions
+  const ringChartData =
+    activitySummary?.categories.map((cat) => ({
+      name: getCategoryName(cat.category, categoryService, isInitialized),
+      value: cat.duration_seconds,
+      percentage: cat.percentage,
+      color: getCategoryColor(cat.category, categoryService, isInitialized),
+    })) || [];
+
+  // Calculate total time for center text
+  const totalActiveTime = activitySummary?.total_active_time || 0;
 
   return (
     <div className="space-y-6">
@@ -105,41 +206,13 @@ export function ActivityLog() {
         </p>
       </div>
 
-      {/* Date Selector */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <DateSelector
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
-          />
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedDate(new Date())}
-            >
-              Today
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedDate(subDays(new Date(), 1))}
-            >
-              Yesterday
-            </Button>
-          </div>
-        </div>
-        <Button
-          onClick={handleRefresh}
-          disabled={loading}
-          size="sm"
-          variant="outline"
-          className="flex items-center gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+      {/* Date Selector - Full Row */}
+      <DateSelector
+        selectedDate={selectedDate}
+        onDateChange={setSelectedDate}
+        onRefresh={handleRefresh}
+        loading={loading}
+      />
 
       {/* Timeline */}
       <Card>
@@ -163,9 +236,6 @@ export function ActivityLog() {
         </CardContent>
       </Card>
 
-      {/* App Usage Treemap */}
-      <AppUsageTreemap activities={activities} />
-
       {/* Selected Activity Details */}
       {selectedActivity && (
         <Card>
@@ -180,8 +250,10 @@ export function ActivityLog() {
             <div className="grid gap-4">
               <div className="flex items-start gap-4">
                 <div
-                  className={`h-4 w-4 rounded-full mt-1 ${getCategoryColor(
-                    selectedActivity.category
+                  className={`h-4 w-4 rounded-full mt-1 ${getCategoryColorClass(
+                    selectedActivity.category,
+                    categoryService,
+                    isInitialized
                   )}`}
                 ></div>
                 <div className="flex-1">
@@ -189,9 +261,108 @@ export function ActivityLog() {
                     <h3 className="text-lg font-semibold">
                       {selectedActivity.app_name}
                     </h3>
-                    <span className="px-2 py-1 text-xs rounded-full bg-muted">
-                      {getCategoryName(selectedActivity.category)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {!editingCategory ? (
+                        <>
+                          <span className="px-2 py-1 text-xs rounded-full bg-muted">
+                            {getCategoryName(
+                              selectedActivity.category,
+                              categoryService,
+                              isInitialized
+                            )}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingCategory(true);
+
+                              // Handle both string and object category formats
+                              let currentCategoryKey: string;
+                              if (
+                                typeof selectedActivity.category === "string"
+                              ) {
+                                currentCategoryKey = selectedActivity.category;
+                              } else if (
+                                typeof selectedActivity.category === "object"
+                              ) {
+                                currentCategoryKey =
+                                  Object.keys(selectedActivity.category)[0] ||
+                                  "unknown";
+                              } else {
+                                currentCategoryKey = "unknown";
+                              }
+
+                              setSelectedCategoryId(
+                                currentCategoryKey.toLowerCase()
+                              );
+                            }}
+                          >
+                            <Edit3 className="h-3 w-3" />
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={selectedCategoryId}
+                            onChange={(e) =>
+                              setSelectedCategoryId(e.target.value)
+                            }
+                            className="px-2 py-1 text-xs border rounded"
+                          >
+                            {isInitialized && categoryService
+                              ? categoryService
+                                  .getCategories()
+                                  .map((category: any) => (
+                                    <option
+                                      key={category.id}
+                                      value={category.id}
+                                    >
+                                      {category.name}
+                                    </option>
+                                  ))
+                              : // Fallback options if category service isn't ready
+                                [
+                                  { id: "development", name: "Development" },
+                                  { id: "productive", name: "Productive" },
+                                  {
+                                    id: "communication",
+                                    name: "Communication",
+                                  },
+                                  { id: "social", name: "Social" },
+                                  {
+                                    id: "entertainment",
+                                    name: "Entertainment",
+                                  },
+                                  { id: "unknown", name: "Unknown" },
+                                ].map((category) => (
+                                  <option key={category.id} value={category.id}>
+                                    {category.name}
+                                  </option>
+                                ))}
+                          </select>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              updateActivityCategory(
+                                selectedActivity.id,
+                                selectedCategoryId
+                              )
+                            }
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingCategory(false)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className="text-muted-foreground mb-3">
                     {selectedActivity.window_title}
@@ -291,6 +462,26 @@ export function ActivityLog() {
           </CardContent>
         </Card>
       )}
+
+      {/* Usage Charts - Side by side at the end */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <RingChart
+          data={ringChartData}
+          title="Category Usage"
+          description="Time spent across different categories"
+          centerText={
+            activitySummary
+              ? `${Math.floor(totalActiveTime / 3600)}h ${Math.floor(
+                  (totalActiveTime % 3600) / 60
+                )}m`
+              : "0m"
+          }
+          centerSubText="Total Active Time"
+          emptyStateText="No activities recorded"
+          emptyStateSubText="Activities will appear here once tracked"
+        />
+        <AppUsageTreemap activities={activities} />
+      </div>
     </div>
   );
 }

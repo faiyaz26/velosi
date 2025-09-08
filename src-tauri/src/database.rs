@@ -342,4 +342,24 @@ impl Database {
             activities,
         })
     }
+
+    pub async fn update_activity_category(
+        &self,
+        activity_id: &str,
+        category: &ActivityCategory,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE activity_entries 
+            SET category = ?1 
+            WHERE id = ?2
+            "#,
+        )
+        .bind(serde_json::to_string(category).unwrap())
+        .bind(activity_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 }
