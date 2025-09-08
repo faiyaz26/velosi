@@ -118,6 +118,24 @@ async fn get_activities_by_date(
 }
 
 #[tauri::command]
+async fn get_activities_by_date_range(
+    state: State<'_, AppState>,
+    start_date: String,
+    end_date: String,
+) -> Result<Vec<ActivityEntry>, String> {
+    let parsed_start_date = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+        .map_err(|e| format!("Invalid start date format: {}", e))?;
+    let parsed_end_date = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+        .map_err(|e| format!("Invalid end date format: {}", e))?;
+
+    state
+        .db
+        .get_activities_by_date_range(parsed_start_date, parsed_end_date)
+        .await
+        .map_err(|e| format!("Database error: {}", e))
+}
+
+#[tauri::command]
 async fn get_activity_summary(
     state: State<'_, AppState>,
     date: String,
@@ -606,6 +624,7 @@ pub fn run() {
             get_permission_status,
             update_user_activity,
             get_activities_by_date,
+            get_activities_by_date_range,
             get_activity_summary,
             get_recent_activities,
             get_timeline_data,

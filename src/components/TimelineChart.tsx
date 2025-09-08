@@ -8,7 +8,14 @@ import {
   Cell,
   Tooltip,
 } from "recharts";
-import { parseISO, format, isValid } from "date-fns";
+import {
+  parseISO,
+  format,
+  isValid,
+  isSameDay,
+  startOfDay,
+  eachDayOfInterval,
+} from "date-fns";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useCategoryService } from "../hooks/useCategoryService";
 
@@ -23,9 +30,16 @@ interface ActivityEntry {
   category: any;
 }
 
+interface DateRange {
+  startDate: Date;
+  endDate: Date;
+}
+
 interface TimelineChartProps {
   activities: ActivityEntry[];
   onActivityClick?: (activity: ActivityEntry) => void;
+  isMultiDay?: boolean;
+  dateRange?: DateRange;
 }
 
 // Small helper to color categories consistently using category service
@@ -64,6 +78,8 @@ const getCategoryColor = (
 export function TimelineChart({
   activities,
   onActivityClick,
+  isMultiDay = false,
+  dateRange,
 }: TimelineChartProps) {
   const [
     selectedActivity,
@@ -77,48 +93,90 @@ export function TimelineChart({
     return isValid(s) && isValid(e) && s.getTime() <= e.getTime();
   });
 
-  // Group activities by hour for the timeline
+  // Group activities by hour for single day or by day for multi-day
   const timelineData = useMemo(() => {
-    const hourlyData: Record<
-      number,
-      {
-        hour: number;
-        activities: ActivityEntry[];
-        totalDuration: number;
-        color: string;
-      }
-    > = {};
+    if (isMultiDay && dateRange) {
+      // Multi-day view: group by days
+      const days = eachDayOfInterval({
+        start: startOfDay(dateRange.startDate),
+        end: startOfDay(dateRange.endDate),
+      });
 
-    for (let hour = 0; hour < 24; hour++) {
-      hourlyData[hour] = {
-        hour,
-        activities: [],
-        totalDuration: 0,
-        color: "#374151", // default gray
-      };
-    }
-
-    safeActivities.forEach((activity) => {
-      const startTime = parseISO(activity.start_time);
-      const endTime = activity.end_time
-        ? parseISO(activity.end_time)
-        : new Date();
-      const hour = startTime.getHours();
-      const duration = (endTime.getTime() - startTime.getTime()) / 1000 / 60; // minutes
-
-      if (hourlyData[hour]) {
-        hourlyData[hour].activities.push(activity);
-        hourlyData[hour].totalDuration += duration;
-        hourlyData[hour].color = getCategoryColor(
-          activity.category,
-          isInitialized,
-          categoryService
+      const dailyData = days.map((day) => {
+        const dayActivities = safeActivities.filter((activity) =>
+          isSameDay(parseISO(activity.start_time), day)
         );
-      }
-    });
 
-    return Object.values(hourlyData);
-  }, [safeActivities]);
+        const totalDuration = dayActivities.reduce((total, activity) => {
+          const startTime = parseISO(activity.start_time);
+          const endTime = activity.end_time
+            ? parseISO(activity.end_time)
+            : new Date();
+          return total + (endTime.getTime() - startTime.getTime()) / 1000 / 60; // minutes
+        }, 0);
+
+        const dominantColor =
+          dayActivities.length > 0
+            ? getCategoryColor(
+                dayActivities[0].category,
+                isInitialized,
+                categoryService
+              )
+            : "#374151";
+
+        return {
+          day: format(day, "MMM d"),
+          date: day,
+          activities: dayActivities,
+          totalDuration,
+          color: dominantColor,
+        };
+      });
+
+      return dailyData;
+    } else {
+      // Single day view: group by hours
+      const hourlyData: Record<
+        number,
+        {
+          hour: number;
+          activities: ActivityEntry[];
+          totalDuration: number;
+          color: string;
+        }
+      > = {};
+
+      for (let hour = 0; hour < 24; hour++) {
+        hourlyData[hour] = {
+          hour,
+          activities: [],
+          totalDuration: 0,
+          color: "#374151", // default gray
+        };
+      }
+
+      safeActivities.forEach((activity) => {
+        const startTime = parseISO(activity.start_time);
+        const endTime = activity.end_time
+          ? parseISO(activity.end_time)
+          : new Date();
+        const hour = startTime.getHours();
+        const duration = (endTime.getTime() - startTime.getTime()) / 1000 / 60; // minutes
+
+        if (hourlyData[hour]) {
+          hourlyData[hour].activities.push(activity);
+          hourlyData[hour].totalDuration += duration;
+          hourlyData[hour].color = getCategoryColor(
+            activity.category,
+            isInitialized,
+            categoryService
+          );
+        }
+      });
+
+      return Object.values(hourlyData);
+    }
+  }, [safeActivities, isMultiDay, dateRange, isInitialized, categoryService]);
 
   const handleBarClick = (data: any) => {
     if (data.activities && data.activities.length > 0) {
@@ -149,7 +207,7 @@ export function TimelineChart({
               margin={{ top: 10, right: 10, left: 10, bottom: 10 }}
             >
               <XAxis
-                dataKey="hour"
+                dataKey={isMultiDay ? "day" : "hour"}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 12, fill: "#94a3b8" }}
@@ -162,11 +220,19 @@ export function TimelineChart({
                     const data = payload[0].payload;
                     const activityCount = data.activities.length;
                     const duration = Math.round(data.totalDuration);
+                    const hours = Math.floor(duration / 60);
+                    const minutes = duration % 60;
+
+                    const durationText =
+                      hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
                     return (
                       <div className="bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-200">
-                        <div className="font-medium">{data.hour}:00</div>
+                        <div className="font-medium">
+                          {isMultiDay ? data.day : `${data.hour}:00`}
+                        </div>
                         <div>{activityCount} activities</div>
-                        <div>{duration} minutes</div>
+                        <div>{durationText}</div>
                       </div>
                     );
                   }

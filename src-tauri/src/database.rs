@@ -195,6 +195,55 @@ impl Database {
         Ok(activities)
     }
 
+    pub async fn get_activities_by_date_range(
+        &self,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<Vec<ActivityEntry>, sqlx::Error> {
+        let start_of_period = start_date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let end_of_period = end_date.and_hms_opt(23, 59, 59).unwrap().and_utc();
+
+        let rows = sqlx::query(
+            r#"
+            SELECT id, start_time, end_time, app_name, app_bundle_id, window_title, url, category
+            FROM activity_entries
+            WHERE start_time >= ?1 AND start_time <= ?2
+            ORDER BY start_time ASC
+            "#,
+        )
+        .bind(start_of_period.to_rfc3339())
+        .bind(end_of_period.to_rfc3339())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut activities = Vec::new();
+        for row in rows {
+            let category: ActivityCategory =
+                serde_json::from_str(&row.get::<String, _>("category"))
+                    .unwrap_or(ActivityCategory::Unknown);
+
+            activities.push(ActivityEntry {
+                id: Uuid::parse_str(&row.get::<String, _>("id")).unwrap(),
+                start_time: DateTime::parse_from_rfc3339(&row.get::<String, _>("start_time"))
+                    .unwrap()
+                    .with_timezone(&Utc),
+                end_time: row.get::<Option<String>, _>("end_time").map(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
+                app_name: row.get("app_name"),
+                app_bundle_id: row.get("app_bundle_id"),
+                window_title: row.get("window_title"),
+                url: row.get("url"),
+                category,
+                segments: vec![], // TODO: Load segments separately
+            });
+        }
+
+        Ok(activities)
+    }
+
     pub async fn get_activity_summary(
         &self,
         date: NaiveDate,

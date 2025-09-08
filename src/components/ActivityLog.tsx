@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Card,
@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DateSelector } from "@/components/DateSelector";
+import { DateRangeSelector, DateRange } from "@/components/DateRangeSelector";
 import { TimelineChart } from "@/components/TimelineChart";
 import { AppUsageTreemap } from "@/components/AppUsageTreemap";
 import { RingChart } from "@/components/RingChart";
@@ -22,7 +22,7 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfDay } from "date-fns";
 import { useCategoryService } from "@/hooks/useCategoryService";
 import {
   getCategoryColor,
@@ -70,7 +70,11 @@ interface ActivitySummary {
 }
 
 export function ActivityLog() {
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const today = startOfDay(new Date());
+  const [selectedRange, setSelectedRange] = useState<DateRange>({
+    startDate: today,
+    endDate: today,
+  });
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [
     activitySummary,
@@ -86,17 +90,22 @@ export function ActivityLog() {
   const { isInitialized, categoryService } = useCategoryService();
 
   useEffect(() => {
-    loadActivities(selectedDate);
+    loadActivities(selectedRange);
     loadActivitySummary();
-  }, [selectedDate]);
+  }, [selectedRange]);
 
-  const loadActivities = async (date: Date) => {
+  const loadActivities = async (range: DateRange) => {
     setLoading(true);
     try {
-      const dateString = format(date, "yyyy-MM-dd");
-      const result = await invoke<ActivityEntry[]>("get_activities_by_date", {
-        date: dateString,
-      });
+      const startDateString = format(range.startDate, "yyyy-MM-dd");
+      const endDateString = format(range.endDate, "yyyy-MM-dd");
+      const result = await invoke<ActivityEntry[]>(
+        "get_activities_by_date_range",
+        {
+          startDate: startDateString,
+          endDate: endDateString,
+        }
+      );
       setActivities(result);
     } catch (error) {
       console.error("Failed to load activities:", error);
@@ -107,19 +116,25 @@ export function ActivityLog() {
   };
 
   const loadActivitySummary = async () => {
-    try {
-      const result = await invoke<ActivitySummary>("get_activity_summary", {
-        date: format(selectedDate, "yyyy-MM-dd"),
-      });
-      setActivitySummary(result);
-    } catch (error) {
-      console.error("Failed to load activity summary:", error);
+    // Only load activity summary for single day (used for other potential features)
+    if (selectedRange.startDate.getTime() === selectedRange.endDate.getTime()) {
+      try {
+        const result = await invoke<ActivitySummary>("get_activity_summary", {
+          date: format(selectedRange.startDate, "yyyy-MM-dd"),
+        });
+        setActivitySummary(result);
+      } catch (error) {
+        console.error("Failed to load activity summary:", error);
+        setActivitySummary(null);
+      }
+    } else {
+      // For multi-day ranges, we calculate everything from activities directly
       setActivitySummary(null);
     }
   };
 
   const handleRefresh = () => {
-    loadActivities(selectedDate);
+    loadActivities(selectedRange);
     loadActivitySummary();
   };
 
@@ -155,15 +170,19 @@ export function ActivityLog() {
       console.log("Category update successful");
 
       // Refresh the activities to show the updated category
-      await loadActivities(selectedDate);
+      await loadActivities(selectedRange);
       console.log("Activities reloaded after category update");
 
       // Update the selected activity if it's the one we just changed
       if (selectedActivity && selectedActivity.id === activityId) {
         console.log("Refreshing selected activity data...");
-        const result = await invoke<ActivityEntry[]>("get_activities_by_date", {
-          date: format(selectedDate, "yyyy-MM-dd"),
-        });
+        const result = await invoke<ActivityEntry[]>(
+          "get_activities_by_date_range",
+          {
+            startDate: format(selectedRange.startDate, "yyyy-MM-dd"),
+            endDate: format(selectedRange.endDate, "yyyy-MM-dd"),
+          }
+        );
         const updatedActivity = result.find(
           (a: ActivityEntry) => a.id === activityId
         );
@@ -184,17 +203,60 @@ export function ActivityLog() {
     }
   };
 
-  // Prepare data for RingChart using common utility functions
-  const ringChartData =
-    activitySummary?.categories.map((cat) => ({
-      name: getCategoryName(cat.category, categoryService, isInitialized),
-      value: cat.duration_seconds,
-      percentage: cat.percentage,
-      color: getCategoryColor(cat.category, categoryService, isInitialized),
-    })) || [];
+  // Calculate category data based on activities (works for both single and multi-day)
+  const { ringChartData, totalActiveTime } = useMemo(() => {
+    if (activities.length === 0) {
+      return { ringChartData: [], totalActiveTime: 0 };
+    }
 
-  // Calculate total time for center text
-  const totalActiveTime = activitySummary?.total_active_time || 0;
+    // Calculate duration for each activity
+    const categoryDurations: Record<string, number> = {};
+    let totalDuration = 0;
+
+    activities.forEach((activity) => {
+      const startTime = new Date(activity.start_time);
+      const endTime = activity.end_time
+        ? new Date(activity.end_time)
+        : new Date();
+      const duration = (endTime.getTime() - startTime.getTime()) / 1000; // seconds
+
+      // Get category key
+      const categoryKey =
+        typeof activity.category === "string"
+          ? activity.category
+          : Object.keys(activity.category || {})[0] || "Unknown";
+
+      categoryDurations[categoryKey] =
+        (categoryDurations[categoryKey] || 0) + duration;
+      totalDuration += duration;
+    });
+
+    // Convert to chart data
+    const chartData = Object.entries(categoryDurations).map(
+      ([category, duration]) => ({
+        name: getCategoryName(
+          { [category]: null },
+          categoryService,
+          isInitialized
+        ),
+        value: duration,
+        percentage: totalDuration > 0 ? (duration / totalDuration) * 100 : 0,
+        color: getCategoryColor(
+          { [category]: null },
+          categoryService,
+          isInitialized
+        ),
+      })
+    );
+
+    return {
+      ringChartData: chartData,
+      totalActiveTime: totalDuration,
+    };
+  }, [activities, categoryService, isInitialized]);
+
+  // Keep activitySummary for potential future use
+  void activitySummary;
 
   return (
     <div className="space-y-6">
@@ -206,10 +268,10 @@ export function ActivityLog() {
         </p>
       </div>
 
-      {/* Date Selector - Full Row */}
-      <DateSelector
-        selectedDate={selectedDate}
-        onDateChange={setSelectedDate}
+      {/* Date Range Selector - Full Row */}
+      <DateRangeSelector
+        selectedRange={selectedRange}
+        onRangeChange={setSelectedRange}
         onRefresh={handleRefresh}
         loading={loading}
       />
@@ -222,8 +284,14 @@ export function ActivityLog() {
             Activity Timeline
           </CardTitle>
           <CardDescription>
-            {format(selectedDate, "EEEE, MMMM d, yyyy")} - Click on activities
-            to see details
+            {selectedRange.startDate.getTime() ===
+            selectedRange.endDate.getTime()
+              ? format(selectedRange.startDate, "EEEE, MMMM d, yyyy")
+              : `${format(selectedRange.startDate, "MMM d")} - ${format(
+                  selectedRange.endDate,
+                  "MMM d, yyyy"
+                )}`}{" "}
+            - Click on activities to see details
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -232,6 +300,11 @@ export function ActivityLog() {
             onActivityClick={(activity: ActivityEntry) => {
               setSelectedActivity(activity);
             }}
+            isMultiDay={
+              selectedRange.startDate.getTime() !==
+              selectedRange.endDate.getTime()
+            }
+            dateRange={selectedRange}
           />
         </CardContent>
       </Card>
@@ -457,7 +530,14 @@ export function ActivityLog() {
             <h3 className="text-lg font-semibold mb-2">No Activities Found</h3>
             <p className="text-muted-foreground">
               No activities were recorded for{" "}
-              {format(selectedDate, "MMMM d, yyyy")}.
+              {selectedRange.startDate.getTime() ===
+              selectedRange.endDate.getTime()
+                ? format(selectedRange.startDate, "MMMM d, yyyy")
+                : `${format(selectedRange.startDate, "MMM d")} - ${format(
+                    selectedRange.endDate,
+                    "MMM d, yyyy"
+                  )}`}
+              .
             </p>
           </CardContent>
         </Card>
@@ -470,7 +550,7 @@ export function ActivityLog() {
           title="Category Usage"
           description="Time spent across different categories"
           centerText={
-            activitySummary
+            totalActiveTime > 0
               ? `${Math.floor(totalActiveTime / 3600)}h ${Math.floor(
                   (totalActiveTime % 3600) / 60
                 )}m`

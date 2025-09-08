@@ -51,7 +51,7 @@ export const RingChart = ({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg">{title}</CardTitle>
+        <CardTitle className="flex items-center gap-2">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="pb-4">
