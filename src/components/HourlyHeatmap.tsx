@@ -133,18 +133,20 @@ export function HourlyHeatmap({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg">Daily Heatmap</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          Today's Heatmap
+        </CardTitle>
         <CardDescription>
           Hourly activity for {format(date, "MMM d")}
         </CardDescription>
       </CardHeader>
       <CardContent className="pb-4">
         {loading ? (
-          <div className="flex justify-center items-center h-[250px]">
+          <div className="flex justify-center items-center h-[100px]">
             <p className="text-muted-foreground text-sm">Loading heatmap...</p>
           </div>
         ) : (
-          <div className="h-[250px] flex flex-col justify-center space-y-3 overflow-x-auto">
+          <div className="h-[100px] flex flex-col justify-center space-y-3 overflow-x-auto">
             {/* Hour labels */}
             <div
               className="grid gap-1 text-xs text-muted-foreground min-w-[600px]"
@@ -186,7 +188,7 @@ export function HourlyHeatmap({
             </div>
 
             {/* Legend and Summary */}
-            <div className="flex items-center justify-between text-xs text-muted-foreground mt-auto">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
               <span>Less</span>
               <div className="flex items-center space-x-1">
                 <div className="w-2 h-2 bg-gray-100 dark:bg-gray-800 rounded-sm" />

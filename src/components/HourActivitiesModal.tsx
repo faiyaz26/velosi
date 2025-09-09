@@ -148,8 +148,8 @@ export function HourActivitiesModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-        <CardHeader>
+      <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <CardHeader className="flex-shrink-0">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5" />
@@ -169,7 +169,7 @@ export function HourActivitiesModal({
             {formatTotalDuration(totalDuration)}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 overflow-y-auto">
           <div className="space-y-3">
             {activities.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
