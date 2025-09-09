@@ -1,6 +1,6 @@
 use crate::models::{
-    ActivityCategory, ActivityEntry, ActivitySegment, ActivitySummary, AppSummary, CategorySummary,
-    DetailedActivity, SegmentSummary, SegmentType, TimelineActivity, TimelineData, TimelineSegment,
+    ActivityCategory, ActivityEntry, ActivitySummary, AppSummary, CategorySummary,
+    TimelineActivity, TimelineData,
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use sqlx::{Row, SqlitePool};
@@ -140,11 +140,6 @@ impl Database {
         } else {
             Ok(None)
         }
-    }
-
-    // Keep old method for backward compatibility but update it
-    pub async fn insert_activity(&self, entry: &ActivityEntry) -> Result<(), sqlx::Error> {
-        self.start_activity(entry).await
     }
 
     pub async fn get_activities_by_date(

@@ -49,7 +49,6 @@ pub struct UserActivity {
 }
 
 pub struct ActivityTracker {
-    last_activity: Option<CurrentActivity>,
     user_activity: UserActivity,
     inactive_threshold: Duration,
 }
@@ -57,7 +56,6 @@ pub struct ActivityTracker {
 impl ActivityTracker {
     pub fn new() -> Self {
         Self {
-            last_activity: None,
             user_activity: UserActivity {
                 last_input_time: SystemTime::now(),
                 is_active: true,
@@ -891,17 +889,5 @@ impl ActivityTracker {
         let result = self.check_user_activity();
         println!("Should track result: {}", result);
         result
-    }
-
-    pub fn get_last_activity(&self) -> Option<&CurrentActivity> {
-        self.last_activity.as_ref()
-    }
-
-    pub fn set_last_activity(&mut self, activity: CurrentActivity) {
-        self.last_activity = Some(activity);
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.user_activity.is_active
     }
 }
