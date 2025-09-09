@@ -280,7 +280,6 @@ export function ActivityLog() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
             Activity Timeline
           </CardTitle>
           <CardDescription>

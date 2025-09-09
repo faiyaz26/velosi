@@ -111,7 +111,6 @@ export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
             App Usage Treemap
           </CardTitle>
           <CardDescription>
@@ -130,7 +129,6 @@ export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Monitor className="h-5 w-5" />
           App Usage Treemap
         </CardTitle>
         <CardDescription>
