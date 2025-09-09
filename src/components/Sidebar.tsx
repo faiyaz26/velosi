@@ -30,8 +30,8 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       icon: Activity,
     },
     {
-      id: "categories",
-      label: "Categories",
+      id: "categorization",
+      label: "Categorization",
       icon: Tag,
     },
     {
@@ -52,9 +52,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           {!isCollapsed && (
-            <h2 className="text-lg font-semibold tracking-tight">
-              Velosi Tracker
-            </h2>
+            <h2 className="text-lg font-semibold tracking-tight">Velosi</h2>
           )}
           <Button
             variant="ghost"

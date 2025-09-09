@@ -1,6 +1,6 @@
 use crate::models::{
-    ActivityCategory, ActivityEntry, ActivitySummary, AppSummary, CategorySummary,
-    TimelineActivity, TimelineData,
+    ActivityCategory, ActivityEntry, ActivitySummary, AppMapping, AppSummary, CategorySummary,
+    TimelineActivity, TimelineData, UrlMapping, UserCategory,
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use sqlx::{Row, SqlitePool};
@@ -53,6 +53,54 @@ impl Database {
         .execute(&pool)
         .await?;
 
+        // Create user categories table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS user_categories (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT NOT NULL,
+                parent_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (parent_id) REFERENCES user_categories (id)
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+
+        // Create app mappings table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS app_mappings (
+                id TEXT PRIMARY KEY,
+                app_pattern TEXT NOT NULL,
+                category_id TEXT NOT NULL,
+                is_custom INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS url_mappings (
+                id TEXT PRIMARY KEY,
+                url_pattern TEXT NOT NULL,
+                category_id TEXT NOT NULL,
+                is_custom INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+
         sqlx::query(
             r#"
             CREATE INDEX IF NOT EXISTS idx_start_time ON activity_entries(start_time);
@@ -61,6 +109,9 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_segment_activity_id ON activity_segments(activity_id);
             CREATE INDEX IF NOT EXISTS idx_segment_start_time ON activity_segments(start_time);
             CREATE INDEX IF NOT EXISTS idx_segment_type ON activity_segments(segment_type);
+            CREATE INDEX IF NOT EXISTS idx_user_categories_parent ON user_categories(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_app_mappings_pattern ON app_mappings(app_pattern);
+            CREATE INDEX IF NOT EXISTS idx_app_mappings_category ON app_mappings(category_id);
             "#,
         )
         .execute(&pool)
@@ -405,5 +456,311 @@ impl Database {
         .await?;
 
         Ok(())
+    }
+
+    // User category management
+    pub async fn add_user_category(&self, category: &UserCategory) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO user_categories (id, name, color, parent_id, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+        )
+        .bind(&category.id)
+        .bind(&category.name)
+        .bind(&category.color)
+        .bind(&category.parent_id)
+        .bind(category.created_at.to_rfc3339())
+        .bind(category.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_user_categories(&self) -> Result<Vec<UserCategory>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, name, color, parent_id, created_at, updated_at
+            FROM user_categories
+            ORDER BY name
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut categories = Vec::new();
+        for row in rows {
+            let created_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("created_at"))
+                .map_err(|_| sqlx::Error::Decode("Invalid created_at format".into()))?
+                .with_timezone(&Utc);
+            let updated_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("updated_at"))
+                .map_err(|_| sqlx::Error::Decode("Invalid updated_at format".into()))?
+                .with_timezone(&Utc);
+
+            categories.push(UserCategory {
+                id: row.get("id"),
+                name: row.get("name"),
+                color: row.get("color"),
+                parent_id: row.get("parent_id"),
+                created_at,
+                updated_at,
+            });
+        }
+
+        Ok(categories)
+    }
+
+    pub async fn update_user_category(&self, category: &UserCategory) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE user_categories 
+            SET name = ?2, color = ?3, parent_id = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+        )
+        .bind(&category.id)
+        .bind(&category.name)
+        .bind(&category.color)
+        .bind(&category.parent_id)
+        .bind(category.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_user_category(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM user_categories WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // App mapping management
+    pub async fn add_app_mapping(&self, mapping: &AppMapping) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO app_mappings (id, app_pattern, category_id, is_custom, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+        )
+        .bind(mapping.id.to_string())
+        .bind(&mapping.app_pattern)
+        .bind(&mapping.category_id)
+        .bind(mapping.is_custom as i32)
+        .bind(mapping.created_at.to_rfc3339())
+        .bind(mapping.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_app_mappings(&self) -> Result<Vec<AppMapping>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, app_pattern, category_id, is_custom, created_at, updated_at
+            FROM app_mappings
+            ORDER BY app_pattern
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut mappings = Vec::new();
+        for row in rows {
+            let id = Uuid::parse_str(&row.get::<String, _>("id"))
+                .map_err(|_| sqlx::Error::Decode("Invalid UUID format".into()))?;
+            let created_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("created_at"))
+                .map_err(|_| sqlx::Error::Decode("Invalid created_at format".into()))?
+                .with_timezone(&Utc);
+            let updated_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("updated_at"))
+                .map_err(|_| sqlx::Error::Decode("Invalid updated_at format".into()))?
+                .with_timezone(&Utc);
+
+            mappings.push(AppMapping {
+                id,
+                app_pattern: row.get("app_pattern"),
+                category_id: row.get("category_id"),
+                is_custom: row.get::<i32, _>("is_custom") != 0,
+                created_at,
+                updated_at,
+            });
+        }
+
+        Ok(mappings)
+    }
+
+    pub async fn update_app_mapping(&self, mapping: &AppMapping) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE app_mappings 
+            SET app_pattern = ?2, category_id = ?3, is_custom = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+        )
+        .bind(mapping.id.to_string())
+        .bind(&mapping.app_pattern)
+        .bind(&mapping.category_id)
+        .bind(mapping.is_custom as i32)
+        .bind(mapping.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_app_mapping(&self, id: &Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM app_mappings WHERE id = ?1")
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn remove_app_mapping(
+        &self,
+        category_id: &str,
+        app_pattern: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM app_mappings WHERE category_id = ?1 AND app_pattern = ?2")
+            .bind(category_id)
+            .bind(app_pattern)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn add_simple_app_mapping(
+        &self,
+        category_id: &str,
+        app_pattern: &str,
+        is_custom: bool,
+    ) -> Result<(), sqlx::Error> {
+        let mapping = AppMapping {
+            id: Uuid::new_v4(),
+            app_pattern: app_pattern.to_string(),
+            category_id: category_id.to_string(),
+            is_custom,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        self.add_app_mapping(&mapping).await
+    }
+
+    // URL Mapping methods
+    pub async fn add_url_mapping(&self, mapping: &UrlMapping) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO url_mappings (id, url_pattern, category_id, is_custom, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+        )
+        .bind(mapping.id.to_string())
+        .bind(&mapping.url_pattern)
+        .bind(&mapping.category_id)
+        .bind(mapping.is_custom as i32)
+        .bind(mapping.created_at.to_rfc3339())
+        .bind(mapping.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_url_mappings(&self) -> Result<Vec<UrlMapping>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, url_pattern, category_id, is_custom, created_at, updated_at
+            FROM url_mappings
+            ORDER BY created_at ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut mappings = Vec::new();
+        for row in rows {
+            let id_str: String = row.get("id");
+            let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+
+            let created_at_str: String = row.get("created_at");
+            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
+                .with_timezone(&Utc);
+
+            let updated_at_str: String = row.get("updated_at");
+            let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
+                .with_timezone(&Utc);
+
+            mappings.push(UrlMapping {
+                id,
+                url_pattern: row.get("url_pattern"),
+                category_id: row.get("category_id"),
+                is_custom: row.get::<i32, _>("is_custom") != 0,
+                created_at,
+                updated_at,
+            });
+        }
+
+        Ok(mappings)
+    }
+
+    pub async fn update_url_mapping(&self, mapping: &UrlMapping) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE url_mappings 
+            SET url_pattern = ?2, category_id = ?3, is_custom = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+        )
+        .bind(mapping.id.to_string())
+        .bind(&mapping.url_pattern)
+        .bind(&mapping.category_id)
+        .bind(mapping.is_custom as i32)
+        .bind(mapping.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn remove_url_mapping(
+        &self,
+        category_id: &str,
+        url_pattern: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM url_mappings WHERE category_id = ?1 AND url_pattern = ?2")
+            .bind(category_id)
+            .bind(url_pattern)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn add_simple_url_mapping(
+        &self,
+        category_id: &str,
+        url_pattern: &str,
+        is_custom: bool,
+    ) -> Result<(), sqlx::Error> {
+        let mapping = UrlMapping {
+            id: Uuid::new_v4(),
+            url_pattern: url_pattern.to_string(),
+            category_id: category_id.to_string(),
+            is_custom,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        self.add_url_mapping(&mapping).await
     }
 }

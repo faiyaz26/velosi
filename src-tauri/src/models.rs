@@ -45,7 +45,40 @@ pub enum ActivityCategory {
     Entertainment,
     Development,
     Communication,
+    Custom(String), // For user-defined categories
     Unknown,
+}
+
+// User-defined categories stored in database
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserCategory {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub parent_id: Option<String>, // For subcategories
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+// App to category mappings stored in database
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppMapping {
+    pub id: Uuid,
+    pub app_pattern: String,      // App name pattern (can include wildcards)
+    pub category_id: String,      // References either built-in or user category
+    pub is_custom: bool,          // true if user override, false if default
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UrlMapping {
+    pub id: Uuid,
+    pub url_pattern: String,      // URL pattern (domain, subdomain, or full URL)
+    pub category_id: String,      // References either built-in or user category
+    pub is_custom: bool,          // true if user override, false if default
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
