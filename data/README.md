@@ -12,7 +12,6 @@ Defines the available categories with their properties:
 - `name`: Display name of the category
 - `description`: Brief description of what apps belong in this category
 - `color`: Hex color code for visual representation
-- `icon`: Icon identifier (using Lucide icons)
 
 ### `app-mappings.json`
 

@@ -1,4 +1,5 @@
 mod database;
+mod migrations;
 mod models;
 mod tracker;
 
@@ -13,6 +14,7 @@ use uuid::Uuid;
 
 use database::Database;
 use models::{ActivityCategory, ActivityEntry, ActivitySummary, TimelineData, UserCategory};
+
 use tracker::{ActivityTracker, CurrentActivity};
 
 // Application state
@@ -803,7 +805,7 @@ async fn setup_database() -> Result<Database, Box<dyn std::error::Error>> {
     // Use std::fs to create directory synchronously since we need it immediately
     std::fs::create_dir_all(&app_data_dir)?;
 
-    let db_path = app_data_dir.join("activities.db");
+    let db_path = app_data_dir.join("velosi.db");
     let database_url = format!("sqlite:{}", db_path.display());
 
     println!("Setting up database at: {}", database_url);
