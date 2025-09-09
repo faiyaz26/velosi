@@ -602,6 +602,65 @@ async fn setup_database() -> Result<Database, Box<dyn std::error::Error>> {
     })
 }
 
+// Helper function to categorize activity based on app name and URL with database mappings only
+async fn categorize_activity(
+    db: &Database,
+    app_name: &str,
+    bundle_id: Option<&str>,
+    url: Option<&str>,
+) -> ActivityCategory {
+    // First, try URL-based categorization if URL is available
+    if let Some(url_str) = url {
+        if let Ok(url_mappings) = db.get_url_mappings().await {
+            for mapping in url_mappings {
+                // Split pattern by "|" and check if any pattern matches
+                let patterns: Vec<&str> = mapping.url_pattern.split('|').collect();
+                let url_lower = url_str.to_lowercase();
+
+                for pattern in patterns {
+                    if url_lower.contains(&pattern.trim().to_lowercase()) {
+                        // Convert category_id to ActivityCategory
+                        return match mapping.category_id.to_lowercase().as_str() {
+                            "development" => ActivityCategory::Development,
+                            "communication" => ActivityCategory::Communication,
+                            "social" => ActivityCategory::Social,
+                            "entertainment" => ActivityCategory::Entertainment,
+                            "productive" => ActivityCategory::Productive,
+                            _ => ActivityCategory::Custom(mapping.category_id),
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    // Try app-based categorization from database mappings
+    if let Ok(app_mappings) = db.get_app_mappings().await {
+        for mapping in app_mappings {
+            // Split pattern by "|" and check if any pattern matches
+            let patterns: Vec<&str> = mapping.app_pattern.split('|').collect();
+            let app_lower = app_name.to_lowercase();
+
+            for pattern in patterns {
+                if app_lower.contains(&pattern.trim().to_lowercase()) {
+                    // Convert category_id to ActivityCategory
+                    return match mapping.category_id.to_lowercase().as_str() {
+                        "development" => ActivityCategory::Development,
+                        "communication" => ActivityCategory::Communication,
+                        "social" => ActivityCategory::Social,
+                        "entertainment" => ActivityCategory::Entertainment,
+                        "productive" => ActivityCategory::Productive,
+                        _ => ActivityCategory::Custom(mapping.category_id),
+                    };
+                }
+            }
+        }
+    }
+
+    // No database mappings found, return Unknown
+    ActivityCategory::Unknown
+}
+
 async fn start_activity_tracking(app_handle: AppHandle) {
     let state: State<'_, AppState> = app_handle.state();
     let mut interval = interval(Duration::from_secs(5)); // Check every 5 seconds
@@ -668,6 +727,14 @@ async fn start_activity_tracking(app_handle: AppHandle) {
                         }
 
                         // Start new activity
+                        let category = categorize_activity(
+                            &state.db,
+                            &current.app_name,
+                            current.app_bundle_id.as_deref(),
+                            current.url.as_deref(),
+                        )
+                        .await;
+
                         let new_entry = ActivityEntry {
                             id: Uuid::new_v4(),
                             start_time: now,
@@ -676,10 +743,7 @@ async fn start_activity_tracking(app_handle: AppHandle) {
                             app_bundle_id: current.app_bundle_id.clone(),
                             window_title: current.window_title.clone(),
                             url: current.url.clone(),
-                            category: ActivityCategory::from_app_name(
-                                &current.app_name,
-                                current.app_bundle_id.as_deref(),
-                            ),
+                            category,
                             segments: vec![], // TODO: Extract and store segments
                         };
 
@@ -699,6 +763,14 @@ async fn start_activity_tracking(app_handle: AppHandle) {
                     // No ongoing activity, start a new one
                     println!("No ongoing activity, starting new one");
 
+                    let category = categorize_activity(
+                        &state.db,
+                        &current.app_name,
+                        current.app_bundle_id.as_deref(),
+                        current.url.as_deref(),
+                    )
+                    .await;
+
                     let new_entry = ActivityEntry {
                         id: Uuid::new_v4(),
                         start_time: Utc::now(),
@@ -707,10 +779,7 @@ async fn start_activity_tracking(app_handle: AppHandle) {
                         app_bundle_id: current.app_bundle_id.clone(),
                         window_title: current.window_title.clone(),
                         url: current.url.clone(),
-                        category: ActivityCategory::from_app_name(
-                            &current.app_name,
-                            current.app_bundle_id.as_deref(),
-                        ),
+                        category,
                         segments: vec![], // TODO: Extract and store segments
                     };
 

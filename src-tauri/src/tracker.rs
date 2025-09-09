@@ -414,18 +414,7 @@ impl ActivityTracker {
                 // Check for specific patterns in window titles
                 let title_lower = window_title.to_lowercase();
 
-                if title_lower.contains("visual studio code")
-                    || title_lower.contains("vs code")
-                    || window_title.contains(".ts")
-                    || window_title.contains(".js")
-                    || window_title.contains(".jsx")
-                    || window_title.contains(".tsx")
-                    || window_title.contains(".py")
-                    || window_title.contains(".rs")
-                    || window_title.contains(".json")
-                    || window_title.contains("src/")
-                    || window_title.contains("velosi-tracker")
-                {
+                if title_lower.contains("visual studio code") || title_lower.contains("vs code") {
                     return "Visual Studio Code".to_string();
                 }
 

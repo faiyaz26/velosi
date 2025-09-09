@@ -64,9 +64,9 @@ pub struct UserCategory {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppMapping {
     pub id: Uuid,
-    pub app_pattern: String,      // App name pattern (can include wildcards)
-    pub category_id: String,      // References either built-in or user category
-    pub is_custom: bool,          // true if user override, false if default
+    pub app_pattern: String, // App name pattern (can include wildcards)
+    pub category_id: String, // References either built-in or user category
+    pub is_custom: bool,     // true if user override, false if default
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -74,9 +74,9 @@ pub struct AppMapping {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UrlMapping {
     pub id: Uuid,
-    pub url_pattern: String,      // URL pattern (domain, subdomain, or full URL)
-    pub category_id: String,      // References either built-in or user category
-    pub is_custom: bool,          // true if user override, false if default
+    pub url_pattern: String, // URL pattern (domain, subdomain, or full URL)
+    pub category_id: String, // References either built-in or user category
+    pub is_custom: bool,     // true if user override, false if default
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -156,7 +156,23 @@ pub struct AppSummary {
 }
 
 impl ActivityCategory {
-    pub fn from_app_name(app_name: &str, _bundle_id: Option<&str>) -> Self {
+    pub fn from_app_name(app_name: &str, bundle_id: Option<&str>) -> Self {
+        Self::from_app_name_and_url(app_name, bundle_id, None)
+    }
+
+    pub fn from_app_name_and_url(
+        app_name: &str,
+        bundle_id: Option<&str>,
+        url: Option<&str>,
+    ) -> Self {
+        // First, try URL-based categorization if URL is available
+        if let Some(url_str) = url {
+            if let Some(category) = Self::from_url(url_str) {
+                return category;
+            }
+        }
+
+        // Fall back to app-based categorization
         match app_name.to_lowercase().as_str() {
             name if name.contains("xcode")
                 || name.contains("vscode")
@@ -168,10 +184,11 @@ impl ActivityCategory {
             }
             name if name.contains("chrome")
                 || name.contains("safari")
-                || name.contains("firefox") =>
+                || name.contains("firefox")
+                || name.contains("edge") =>
             {
-                // We could further categorize based on URL if available
-                Self::Productive // Default for browsers, can be refined with URL analysis
+                // For browsers, if no URL-specific category was found, default to Productive
+                Self::Productive
             }
             name if name.contains("slack")
                 || name.contains("discord")
@@ -197,6 +214,52 @@ impl ActivityCategory {
                 Self::Entertainment
             }
             _ => Self::Unknown,
+        }
+    }
+
+    fn from_url(url: &str) -> Option<Self> {
+        let url_lower = url.to_lowercase();
+
+        // Check for common URL patterns and categorize accordingly
+        if url_lower.contains("github.com")
+            || url_lower.contains("gitlab.com")
+            || url_lower.contains("stackoverflow.com")
+            || url_lower.contains("docs.")
+            || url_lower.contains("developer.")
+        {
+            Some(Self::Development)
+        } else if url_lower.contains("gmail.com")
+            || url_lower.contains("outlook.com")
+            || url_lower.contains("mail.")
+            || url_lower.contains("slack.com")
+            || url_lower.contains("discord.com")
+            || url_lower.contains("teams.microsoft.com")
+        {
+            Some(Self::Communication)
+        } else if url_lower.contains("twitter.com")
+            || url_lower.contains("facebook.com")
+            || url_lower.contains("instagram.com")
+            || url_lower.contains("linkedin.com")
+            || url_lower.contains("reddit.com")
+            || url_lower.contains("tiktok.com")
+        {
+            Some(Self::Social)
+        } else if url_lower.contains("youtube.com")
+            || url_lower.contains("netflix.com")
+            || url_lower.contains("spotify.com")
+            || url_lower.contains("twitch.tv")
+            || url_lower.contains("hulu.com")
+            || url_lower.contains("disney.com")
+        {
+            Some(Self::Entertainment)
+        } else if url_lower.contains("amazon.com")
+            || url_lower.contains("ebay.com")
+            || url_lower.contains("shopping")
+            || url_lower.contains("store")
+        {
+            Some(Self::Productive) // Shopping can be considered productive in some contexts
+        } else {
+            None // No specific category found, will fall back to app-based categorization
         }
     }
 }

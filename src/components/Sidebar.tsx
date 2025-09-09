@@ -44,7 +44,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   return (
     <div
       className={cn(
-        "relative flex flex-col bg-card border-r border-border transition-all duration-300 flex-shrink-0 h-screen",
+        "relative flex flex-col bg-sidebar border-r border-border transition-all duration-300 flex-shrink-0 h-screen",
         isCollapsed ? "w-16 min-w-16 max-w-16" : "w-64 min-w-64 max-w-64"
       )}
     >
@@ -52,7 +52,9 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           {!isCollapsed && (
-            <h2 className="text-lg font-semibold tracking-tight">Velosi</h2>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">
+              Velosi
+            </h1>
           )}
           <Button
             variant="ghost"

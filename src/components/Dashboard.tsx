@@ -89,12 +89,12 @@ export function Dashboard() {
       }
     );
 
-    // Auto-refresh every 10 seconds
+    // Auto-refresh every 90 seconds
     const interval = setInterval(() => {
       loadTodaysActivitySummary();
       loadTrackingStatus();
       loadCurrentActivity();
-    }, 10000);
+    }, 90000);
 
     return () => {
       clearInterval(interval);

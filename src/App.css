@@ -6,7 +6,7 @@
   filter: drop-shadow(0 0 2em #61dafb);
 }
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
@@ -93,6 +93,16 @@ button {
 
 #greet-input {
   margin-right: 5px;
+}
+
+/* Make the entire app draggable */
+.app-draggable {
+  -webkit-app-region: drag;
+}
+
+/* Exclude interactive elements from being draggable */
+.no-drag {
+  -webkit-app-region: no-drag;
 }
 
 @media (prefers-color-scheme: dark) {

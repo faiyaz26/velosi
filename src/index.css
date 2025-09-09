@@ -4,48 +4,52 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    /* macOS light theme colors */
+    --background: 0 0% 98%; /* macOS window background */
+    --foreground: 0 0% 15%; /* macOS text */
+    --card: 0 0% 95%; /* macOS sidebar background */
+    --card-foreground: 0 0% 20%;
+    --popover: 0 0% 98%;
+    --popover-foreground: 0 0% 15%;
+    --primary: 212 100% 48%; /* macOS blue accent */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 92%; /* macOS secondary background */
+    --secondary-foreground: 0 0% 25%;
+    --muted: 0 0% 90%; /* macOS tertiary background */
+    --muted-foreground: 0 0% 45%; /* macOS secondary label */
+    --accent: 212 100% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 85%; /* macOS separator */
+    --input: 0 0% 92%;
+    --ring: 212 100% 48%;
+    --radius: 0.375rem; /* macOS corner radius */
+    --sidebar-bg: 0 0% 95%; /* macOS sidebar specific */
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* macOS dark theme colors */
+    --background: 0 0% 11%; /* macOS dark window background */
+    --foreground: 0 0% 90%; /* macOS dark text */
+    --card: 0 0% 15%; /* macOS dark sidebar background */
+    --card-foreground: 0 0% 85%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 90%;
+    --primary: 212 100% 60%; /* macOS blue accent (brighter for dark) */
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 0% 18%; /* macOS dark secondary background */
+    --secondary-foreground: 0 0% 85%;
+    --muted: 0 0% 20%; /* macOS dark tertiary background */
+    --muted-foreground: 0 0% 60%; /* macOS dark secondary label */
+    --accent: 212 100% 60%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 25%; /* macOS dark separator */
+    --input: 0 0% 18%;
+    --ring: 212 100% 60%;
+    --sidebar-bg: 0 0% 15%; /* macOS dark sidebar specific */
   }
 }
 
