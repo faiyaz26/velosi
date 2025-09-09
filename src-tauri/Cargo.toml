@@ -1,8 +1,8 @@
 [package]
-name = "velosi-tracker"
+name = "velosi"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Focus on your work"
+authors = ["Ahmad Faiyaz"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -34,4 +34,18 @@ core-graphics = "0.23"
 core-foundation = "0.9"
 cocoa = "0.25"
 objc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = [
+    "winuser",
+    "processthreadsapi",
+    "psapi",
+    "tlhelp32",
+    "shellapi",
+    "combaseapi",
+    "objbase",
+    "oleauto",
+    "winerror",
+    "handleapi"
+] }
 

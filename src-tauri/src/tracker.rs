@@ -6,6 +6,21 @@ use url::Url;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::ffi::CStr;
+#[cfg(target_os = "windows")]
+use std::ptr;
+#[cfg(target_os = "windows")]
+use winapi::um::handleapi::CloseHandle;
+#[cfg(target_os = "windows")]
+use winapi::um::processthreadsapi::OpenProcess;
+#[cfg(target_os = "windows")]
+use winapi::um::psapi::GetModuleFileNameExA;
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::PROCESS_QUERY_INFORMATION;
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::{GetForegroundWindow, GetWindowTextA, GetWindowThreadProcessId};
+
 use crate::models::SegmentType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +80,13 @@ impl ActivityTracker {
             self.get_current_activity_macos()
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        {
+            println!("Getting real Windows activity");
+            self.get_current_activity_windows()
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             println!("Platform not supported for activity tracking");
             None
@@ -562,17 +583,263 @@ impl ActivityTracker {
         Some(window_title.to_string())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    // Windows implementation
+    #[cfg(target_os = "windows")]
+    fn get_current_activity_windows(&self) -> Option<CurrentActivity> {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                return None;
+            }
+
+            // Get window title
+            let mut window_title = [0u8; 512];
+            let title_len = GetWindowTextA(hwnd, window_title.as_mut_ptr() as *mut i8, 512);
+            let window_title_str = if title_len > 0 {
+                CStr::from_ptr(window_title.as_ptr() as *const i8)
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                "Unknown Window".to_string()
+            };
+
+            // Get process ID and executable name
+            let mut process_id = 0u32;
+            GetWindowThreadProcessId(hwnd, &mut process_id);
+
+            let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, process_id);
+            if process_handle.is_null() {
+                return Some(CurrentActivity {
+                    app_name: "Unknown Application".to_string(),
+                    app_bundle_id: Some(process_id.to_string()),
+                    window_title: window_title_str,
+                    url: None,
+                    timestamp: Utc::now(),
+                    segment_info: self.extract_segment_info_windows(
+                        &"Unknown Application".to_string(),
+                        &window_title_str,
+                    ),
+                });
+            }
+
+            let mut exe_path = [0u8; 512];
+            let path_len = GetModuleFileNameExA(
+                process_handle,
+                ptr::null_mut(),
+                exe_path.as_mut_ptr() as *mut i8,
+                512,
+            );
+            CloseHandle(process_handle);
+
+            let app_name = if path_len > 0 {
+                let full_path = CStr::from_ptr(exe_path.as_ptr() as *const i8)
+                    .to_string_lossy()
+                    .to_string();
+
+                // Extract just the executable name from the full path
+                std::path::Path::new(&full_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string()
+            } else {
+                "Unknown Application".to_string()
+            };
+
+            // Improve app name recognition
+            let better_app_name = self.get_better_app_name_windows(&app_name);
+
+            // Check if it's a browser and get URL if possible
+            let url = if self.is_browser_app_windows(&better_app_name) {
+                self.get_browser_url_windows(&better_app_name, &window_title_str)
+            } else {
+                None
+            };
+
+            // Extract segment information
+            let segment_info =
+                self.extract_segment_info_windows(&better_app_name, &window_title_str);
+
+            Some(CurrentActivity {
+                app_name: better_app_name,
+                app_bundle_id: Some(process_id.to_string()),
+                window_title: window_title_str,
+                url,
+                timestamp: Utc::now(),
+                segment_info,
+            })
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn get_better_app_name_windows(&self, raw_name: &str) -> String {
+        match raw_name.to_lowercase().as_str() {
+            "chrome" => "Google Chrome".to_string(),
+            "firefox" => "Mozilla Firefox".to_string(),
+            "msedge" => "Microsoft Edge".to_string(),
+            "code" => "Visual Studio Code".to_string(),
+            "notepad++" => "Notepad++".to_string(),
+            "explorer" => "File Explorer".to_string(),
+            "cmd" => "Command Prompt".to_string(),
+            "powershell" => "PowerShell".to_string(),
+            "discord" => "Discord".to_string(),
+            "slack" => "Slack".to_string(),
+            "teams" => "Microsoft Teams".to_string(),
+            "zoom" => "Zoom".to_string(),
+            "spotify" => "Spotify".to_string(),
+            "vlc" => "VLC Media Player".to_string(),
+            _ => raw_name.to_string(),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn is_browser_app_windows(&self, app_name: &str) -> bool {
+        let app_lower = app_name.to_lowercase();
+        app_lower.contains("chrome")
+            || app_lower.contains("firefox")
+            || app_lower.contains("edge")
+            || app_lower.contains("safari")
+            || app_lower.contains("opera")
+            || app_lower.contains("brave")
+    }
+
+    #[cfg(target_os = "windows")]
+    fn get_browser_url_windows(&self, app_name: &str, window_title: &str) -> Option<String> {
+        // For Windows, we'll extract URL from window title if possible
+        // This is a simplified approach - more sophisticated URL extraction would require browser-specific APIs
+
+        if window_title.contains(" - ") {
+            let parts: Vec<&str> = window_title.split(" - ").collect();
+            if parts.len() >= 2 {
+                let potential_url = parts[parts.len() - 2]; // Usually the URL is before the browser name
+                if potential_url.starts_with("http") {
+                    return Some(potential_url.to_string());
+                }
+            }
+        }
+
+        // Try to extract from common browser title patterns
+        if app_name.to_lowercase().contains("chrome") && window_title.contains("Google Chrome") {
+            // Chrome usually has format: "Page Title - Google Chrome"
+            if let Some(title_part) = window_title.strip_suffix(" - Google Chrome") {
+                return Some(format!("Chrome Tab: {}", title_part));
+            }
+        }
+
+        if app_name.to_lowercase().contains("firefox") && window_title.contains("Mozilla Firefox") {
+            if let Some(title_part) = window_title.strip_suffix(" - Mozilla Firefox") {
+                return Some(format!("Firefox Tab: {}", title_part));
+            }
+        }
+
+        if app_name.to_lowercase().contains("edge") && window_title.contains("Microsoft Edge") {
+            if let Some(title_part) = window_title.strip_suffix(" - Microsoft Edge") {
+                return Some(format!("Edge Tab: {}", title_part));
+            }
+        }
+
+        Some(format!("{}: {}", app_name, window_title))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn extract_segment_info_windows(
+        &self,
+        app_name: &str,
+        window_title: &str,
+    ) -> Option<SegmentInfo> {
+        let app_lower = app_name.to_lowercase();
+
+        if self.is_browser_app_windows(app_name) {
+            Some(SegmentInfo {
+                segment_type: SegmentType::BrowserTab,
+                title: window_title.to_string(),
+                url: self.get_browser_url_windows(app_name, window_title),
+                file_path: None,
+                metadata: Some(format!("Browser: {}", app_name)),
+            })
+        } else if app_lower.contains("code")
+            || app_lower.contains("notepad")
+            || window_title.contains(".")
+        {
+            // Likely a code editor or file editor
+            Some(SegmentInfo {
+                segment_type: SegmentType::EditorFile,
+                title: window_title.to_string(),
+                url: None,
+                file_path: self.extract_file_path_from_title_windows(window_title),
+                metadata: Some(format!("Editor: {}", app_name)),
+            })
+        } else {
+            Some(SegmentInfo {
+                segment_type: SegmentType::AppWindow,
+                title: window_title.to_string(),
+                url: None,
+                file_path: None,
+                metadata: Some(format!("Application: {}", app_name)),
+            })
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn extract_file_path_from_title_windows(&self, window_title: &str) -> Option<String> {
+        // Try to extract file path from various editor title patterns
+
+        // VS Code pattern: "filename.ext - path - Visual Studio Code"
+        if window_title.contains(" - Visual Studio Code") {
+            if let Some(title_part) = window_title.strip_suffix(" - Visual Studio Code") {
+                if title_part.contains(" - ") {
+                    let parts: Vec<&str> = title_part.split(" - ").collect();
+                    if parts.len() >= 2 {
+                        return Some(format!("{}/{}", parts[1], parts[0]));
+                    }
+                }
+                return Some(title_part.to_string());
+            }
+        }
+
+        // Notepad++ pattern: "filename.ext - Notepad++"
+        if window_title.contains(" - Notepad++") {
+            if let Some(filename) = window_title.strip_suffix(" - Notepad++") {
+                return Some(filename.to_string());
+            }
+        }
+
+        // Generic file pattern: look for file extensions
+        if window_title.contains('.') {
+            let potential_file = window_title.split(' ').find(|part| {
+                part.contains('.')
+                    && part.len() > 3
+                    && (part.ends_with(".txt")
+                        || part.ends_with(".rs")
+                        || part.ends_with(".js")
+                        || part.ends_with(".ts")
+                        || part.ends_with(".py")
+                        || part.ends_with(".cpp")
+                        || part.ends_with(".c")
+                        || part.ends_with(".h")
+                        || part.ends_with(".java"))
+            });
+
+            if let Some(file) = potential_file {
+                return Some(file.to_string());
+            }
+        }
+
+        None
+    }
+
+    // Fallback implementations for non-macOS, non-Windows platforms
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     fn get_active_window_title(&self) -> Option<String> {
         None
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     fn get_browser_url(&self, _app_name: &str, _bundle_id: &Option<String>) -> Option<String> {
         None
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     fn get_better_app_name(&self, raw_name: &str, _bundle_id: &Option<String>) -> String {
         raw_name.to_string()
     }
