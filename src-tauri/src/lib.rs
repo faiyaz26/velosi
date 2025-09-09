@@ -227,210 +227,76 @@ async fn toggle_tracking(
 }
 
 #[tauri::command]
-async fn load_categories(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    // Try multiple path resolution strategies
-    let possible_paths = vec![
-        // Development: relative to current directory
-        std::env::current_dir()
-            .ok()
-            .map(|dir| dir.join("data").join("categories.json")),
-        // Development: relative to project root
-        std::env::current_dir()
-            .ok()
-            .map(|dir| dir.parent().map(|p| p.join("data").join("categories.json")))
-            .flatten(),
-        // Try the app's executable directory
-        app_handle
-            .path()
-            .app_local_data_dir()
-            .ok()
-            .map(|dir| dir.join("data").join("categories.json")),
-    ];
-
-    let mut categories_path = None;
-    for path_option in possible_paths {
-        if let Some(path) = path_option {
-            if path.exists() {
-                categories_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let categories_path =
-        categories_path.ok_or("Could not find categories.json in any expected location")?;
-
-    let categories_content = std::fs::read_to_string(&categories_path).map_err(|e| {
-        format!(
-            "Failed to read categories.json from {:?}: {}",
-            categories_path, e
-        )
-    })?;
-
-    let categories: Value = serde_json::from_str(&categories_content)
-        .map_err(|e| format!("Failed to parse categories.json: {}", e))?;
-
-    Ok(categories)
-}
-
-#[tauri::command]
-async fn load_app_mappings(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    // Try multiple path resolution strategies
-    let possible_paths = vec![
-        // Development: relative to current directory
-        std::env::current_dir()
-            .ok()
-            .map(|dir| dir.join("data").join("app-mappings.json")),
-        // Development: relative to project root
-        std::env::current_dir()
-            .ok()
-            .map(|dir| {
-                dir.parent()
-                    .map(|p| p.join("data").join("app-mappings.json"))
-            })
-            .flatten(),
-        // Try the app's executable directory
-        app_handle
-            .path()
-            .app_local_data_dir()
-            .ok()
-            .map(|dir| dir.join("data").join("app-mappings.json")),
-    ];
-
-    let mut mappings_path = None;
-    for path_option in possible_paths {
-        if let Some(path) = path_option {
-            if path.exists() {
-                mappings_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let mappings_path =
-        mappings_path.ok_or("Could not find app-mappings.json in any expected location")?;
-
-    let mappings_content = std::fs::read_to_string(&mappings_path).map_err(|e| {
-        format!(
-            "Failed to read app-mappings.json from {:?}: {}",
-            mappings_path, e
-        )
-    })?;
-
-    let mappings: Value = serde_json::from_str(&mappings_content)
-        .map_err(|e| format!("Failed to parse app-mappings.json: {}", e))?;
-
-    Ok(mappings)
-}
-
-#[tauri::command]
-async fn get_categories(
-    app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    // Load built-in categories from JSON
-    let builtin_categories = load_categories(app_handle).await?;
-
-    // Load user-defined categories from database
-    let user_categories = state
+async fn get_categories(state: State<'_, AppState>) -> Result<Value, String> {
+    // Load all categories from database (both built-in and user-defined)
+    let categories = state
         .db
         .get_user_categories()
         .await
-        .map_err(|e| format!("Failed to load user categories: {}", e))?;
+        .map_err(|e| format!("Failed to load categories: {}", e))?;
 
-    // Merge built-in and user categories
-    let mut result = builtin_categories;
-    if let Some(categories_array) = result.get_mut("categories").and_then(|v| v.as_array_mut()) {
-        for user_cat in user_categories {
-            let user_cat_json = serde_json::json!({
-                "id": user_cat.id,
-                "name": user_cat.name,
-                "color": user_cat.color,
-                "parent_id": user_cat.parent_id
-            });
-            categories_array.push(user_cat_json);
-        }
-    }
+    // Convert to the expected JSON format
+    let categories_json: Vec<serde_json::Value> = categories
+        .into_iter()
+        .map(|cat| {
+            serde_json::json!({
+                "id": cat.id,
+                "name": cat.name,
+                "color": cat.color,
+                "parent_id": cat.parent_id,
+                "created_at": cat.created_at,
+                "updated_at": cat.updated_at
+            })
+        })
+        .collect();
+
+    let result = serde_json::json!({
+        "categories": categories_json
+    });
 
     Ok(result)
 }
 
 #[tauri::command]
-async fn get_app_mappings(
-    app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    println!("🔄 Loading app mappings...");
+async fn get_app_mappings(state: State<'_, AppState>) -> Result<Value, String> {
+    println!("🔄 Loading app mappings from database...");
 
-    // Load built-in mappings from JSON
-    let builtin_mappings = match load_app_mappings(app_handle).await {
-        Ok(mappings) => {
-            println!("✅ Successfully loaded built-in mappings");
-            mappings
-        }
-        Err(e) => {
-            println!(
-                "⚠️  No built-in mappings found: {}, using empty structure",
-                e
-            );
-            serde_json::json!({ "mappings": [] })
-        }
-    };
-
-    // Load custom mappings from database
-    let custom_mappings = state
+    // Load all mappings from database (both built-in and custom)
+    let app_mappings = state
         .db
         .get_app_mappings()
         .await
-        .map_err(|e| format!("Failed to load custom app mappings: {}", e))?;
+        .map_err(|e| format!("Failed to load app mappings: {}", e))?;
 
-    println!(
-        "🔍 Found {} custom mappings from database",
-        custom_mappings.len()
-    );
+    println!("🔍 Found {} app mappings from database", app_mappings.len());
 
-    // Start with built-in mappings
-    let mut result = builtin_mappings;
+    // Group mappings by category
+    let mut category_mappings: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
 
-    // Apply custom mappings (they override built-in ones)
-    if let Some(mappings_array) = result.get_mut("mappings").and_then(|v| v.as_array_mut()) {
-        for custom_mapping in custom_mappings {
-            if custom_mapping.is_custom {
-                // Find existing mapping for this category and replace it
-                let mut found = false;
-                for mapping in mappings_array.iter_mut() {
-                    if let Some(category) = mapping.get("category").and_then(|v| v.as_str()) {
-                        if category == custom_mapping.category_id {
-                            // Replace with custom mapping
-                            *mapping = serde_json::json!({
-                                "category": custom_mapping.category_id,
-                                "apps": vec![custom_mapping.app_pattern.clone()]
-                            });
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-
-                // If not found, add as new mapping
-                if !found {
-                    mappings_array.push(serde_json::json!({
-                        "category": custom_mapping.category_id,
-                        "apps": vec![custom_mapping.app_pattern]
-                    }));
-                }
-            }
-        }
+    for mapping in app_mappings {
+        category_mappings
+            .entry(mapping.category_id)
+            .or_insert_with(Vec::new)
+            .push(mapping.app_pattern);
     }
 
-    // Debug: print final result
-    if let Some(mappings_array) = result.get("mappings").and_then(|v| v.as_array()) {
-        println!("📋 Final mappings count: {}", mappings_array.len());
-        for (i, mapping) in mappings_array.iter().take(3).enumerate() {
-            println!("📋 Sample mapping {}: {:?}", i, mapping);
-        }
-    }
+    // Convert to the expected JSON format
+    let mappings_json: Vec<serde_json::Value> = category_mappings
+        .into_iter()
+        .map(|(category, apps)| {
+            serde_json::json!({
+                "category": category,
+                "apps": apps
+            })
+        })
+        .collect();
 
+    let result = serde_json::json!({
+        "mappings": mappings_json
+    });
+
+    println!("📋 Final mappings count: {}", mappings_json.len());
     Ok(result)
 }
 
@@ -500,14 +366,14 @@ async fn delete_category(id: String, state: State<'_, AppState>) -> Result<(), S
 
 #[tauri::command]
 async fn add_app_mapping(
-    category_id: i32,
+    category_id: String,
     app_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let is_custom = true; // Default to true for manually added mappings
     state
         .db
-        .add_simple_app_mapping(&category_id.to_string(), &app_name, is_custom)
+        .add_simple_app_mapping(&category_id, &app_name, is_custom)
         .await
         .map_err(|e| format!("Failed to add app mapping: {}", e))
 }
@@ -515,12 +381,12 @@ async fn add_app_mapping(
 #[tauri::command]
 async fn remove_app_mapping(
     category_id: String,
-    app_pattern: String,
+    app_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .db
-        .remove_app_mapping(&category_id, &app_pattern)
+        .remove_app_mapping(&category_id, &app_name)
         .await
         .map_err(|e| format!("Failed to remove app mapping: {}", e))
 }
@@ -594,126 +460,46 @@ async fn remove_url_mapping(
 }
 
 #[tauri::command]
-async fn get_url_mappings(
-    app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    println!("🔄 Loading URL mappings...");
+async fn get_url_mappings(state: State<'_, AppState>) -> Result<Value, String> {
+    println!("🔄 Loading URL mappings from database...");
 
-    // Load built-in URL mappings from JSON (if they exist)
-    let builtin_mappings = match load_url_mappings(app_handle).await {
-        Ok(mappings) => {
-            println!("✅ Successfully loaded built-in URL mappings");
-            mappings
-        }
-        Err(e) => {
-            println!(
-                "⚠️  No built-in URL mappings found: {}, using empty structure",
-                e
-            );
-            serde_json::json!({ "mappings": [] })
-        }
-    };
-
-    // Load custom URL mappings from database
-    let custom_mappings = state
+    // Load all URL mappings from database (both built-in and custom)
+    let url_mappings = state
         .db
         .get_url_mappings()
         .await
-        .map_err(|e| format!("Failed to load custom URL mappings: {}", e))?;
+        .map_err(|e| format!("Failed to load URL mappings: {}", e))?;
 
-    println!(
-        "🔍 Found {} custom URL mappings from database",
-        custom_mappings.len()
-    );
+    println!("🔍 Found {} URL mappings from database", url_mappings.len());
 
-    // Start with built-in mappings
-    let mut result = builtin_mappings;
+    // Group mappings by category
+    let mut category_mappings: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
 
-    // Apply custom mappings (they override built-in ones)
-    if let Some(mappings_array) = result.get_mut("mappings").and_then(|v| v.as_array_mut()) {
-        for custom_mapping in custom_mappings {
-            if custom_mapping.is_custom {
-                // Find existing mapping for this category and replace it
-                let mut found = false;
-                for mapping in mappings_array.iter_mut() {
-                    if let Some(category) = mapping.get("category").and_then(|v| v.as_str()) {
-                        if category == custom_mapping.category_id {
-                            // Replace with custom mapping
-                            *mapping = serde_json::json!({
-                                "category": custom_mapping.category_id,
-                                "urls": vec![custom_mapping.url_pattern.clone()]
-                            });
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-
-                // If not found, add as new mapping
-                if !found {
-                    mappings_array.push(serde_json::json!({
-                        "category": custom_mapping.category_id,
-                        "urls": vec![custom_mapping.url_pattern]
-                    }));
-                }
-            }
-        }
+    for mapping in url_mappings {
+        category_mappings
+            .entry(mapping.category_id)
+            .or_insert_with(Vec::new)
+            .push(mapping.url_pattern);
     }
 
-    // Debug: print final result
-    if let Some(mappings_array) = result.get("mappings").and_then(|v| v.as_array()) {
-        println!("📋 Final URL mappings count: {}", mappings_array.len());
-        for (i, mapping) in mappings_array.iter().take(3).enumerate() {
-            println!("📋 Sample URL mapping {}: {:?}", i, mapping);
-        }
-    }
-
-    Ok(result)
-}
-
-async fn load_url_mappings(app_handle: tauri::AppHandle) -> Result<Value, String> {
-    // Try multiple path resolution strategies
-    let possible_paths = vec![
-        // Development: relative to current directory
-        std::env::current_dir()
-            .ok()
-            .map(|dir| dir.join("data").join("url-mappings.json")),
-        // Development: relative to project root
-        std::env::current_dir()
-            .ok()
-            .map(|dir| {
-                dir.parent()
-                    .map(|p| p.join("data").join("url-mappings.json"))
+    // Convert to the expected JSON format
+    let mappings_json: Vec<serde_json::Value> = category_mappings
+        .into_iter()
+        .map(|(category, urls)| {
+            serde_json::json!({
+                "category": category,
+                "urls": urls
             })
-            .flatten(),
-        // Try the app's executable directory
-        app_handle
-            .path()
-            .app_local_data_dir()
-            .ok()
-            .map(|dir| dir.join("data").join("url-mappings.json")),
-    ];
+        })
+        .collect();
 
-    let mut mappings_path = None;
-    for path_option in possible_paths {
-        if let Some(path) = path_option {
-            if path.exists() {
-                mappings_path = Some(path);
-                break;
-            }
-        }
-    }
+    let result = serde_json::json!({
+        "mappings": mappings_json
+    });
 
-    let path = mappings_path.ok_or("Could not find url-mappings.json in any expected location")?;
-
-    let mappings_content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read url-mappings.json: {}", e))?;
-
-    let mappings: Value = serde_json::from_str(&mappings_content)
-        .map_err(|e| format!("Failed to parse url-mappings.json: {}", e))?;
-
-    Ok(mappings)
+    println!("📋 Final URL mappings count: {}", mappings_json.len());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1091,8 +877,6 @@ pub fn run() {
             show_window,
             hide_window,
             toggle_tracking,
-            load_categories,
-            load_app_mappings,
             get_categories,
             get_app_mappings,
             add_category,
