@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { ActivityLog } from "@/components/ActivityLog";
+import { Categories } from "@/components/Categories";
 import { Settings } from "@/components/Settings";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,8 @@ function App() {
         return <Dashboard />;
       case "activity-log":
         return <ActivityLog />;
+      case "categories":
+        return <Categories />;
       case "settings":
         return <Settings />;
       default:

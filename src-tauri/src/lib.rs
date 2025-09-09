@@ -225,14 +225,45 @@ async fn toggle_tracking(
 }
 
 #[tauri::command]
-async fn load_categories() -> Result<Value, String> {
-    let categories_path = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join("data")
-        .join("categories.json");
+async fn load_categories(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    // Try multiple path resolution strategies
+    let possible_paths = vec![
+        // Development: relative to current directory
+        std::env::current_dir()
+            .ok()
+            .map(|dir| dir.join("data").join("categories.json")),
+        // Development: relative to project root
+        std::env::current_dir()
+            .ok()
+            .map(|dir| dir.parent().map(|p| p.join("data").join("categories.json")))
+            .flatten(),
+        // Try the app's executable directory
+        app_handle
+            .path()
+            .app_local_data_dir()
+            .ok()
+            .map(|dir| dir.join("data").join("categories.json")),
+    ];
 
-    let categories_content = std::fs::read_to_string(categories_path)
-        .map_err(|e| format!("Failed to read categories.json: {}", e))?;
+    let mut categories_path = None;
+    for path_option in possible_paths {
+        if let Some(path) = path_option {
+            if path.exists() {
+                categories_path = Some(path);
+                break;
+            }
+        }
+    }
+
+    let categories_path =
+        categories_path.ok_or("Could not find categories.json in any expected location")?;
+
+    let categories_content = std::fs::read_to_string(&categories_path).map_err(|e| {
+        format!(
+            "Failed to read categories.json from {:?}: {}",
+            categories_path, e
+        )
+    })?;
 
     let categories: Value = serde_json::from_str(&categories_content)
         .map_err(|e| format!("Failed to parse categories.json: {}", e))?;
@@ -241,19 +272,211 @@ async fn load_categories() -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn load_app_mappings() -> Result<Value, String> {
-    let mappings_path = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join("data")
-        .join("app-mappings.json");
+async fn load_app_mappings(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    // Try multiple path resolution strategies
+    let possible_paths = vec![
+        // Development: relative to current directory
+        std::env::current_dir()
+            .ok()
+            .map(|dir| dir.join("data").join("app-mappings.json")),
+        // Development: relative to project root
+        std::env::current_dir()
+            .ok()
+            .map(|dir| {
+                dir.parent()
+                    .map(|p| p.join("data").join("app-mappings.json"))
+            })
+            .flatten(),
+        // Try the app's executable directory
+        app_handle
+            .path()
+            .app_local_data_dir()
+            .ok()
+            .map(|dir| dir.join("data").join("app-mappings.json")),
+    ];
 
-    let mappings_content = std::fs::read_to_string(mappings_path)
-        .map_err(|e| format!("Failed to read app-mappings.json: {}", e))?;
+    let mut mappings_path = None;
+    for path_option in possible_paths {
+        if let Some(path) = path_option {
+            if path.exists() {
+                mappings_path = Some(path);
+                break;
+            }
+        }
+    }
+
+    let mappings_path =
+        mappings_path.ok_or("Could not find app-mappings.json in any expected location")?;
+
+    let mappings_content = std::fs::read_to_string(&mappings_path).map_err(|e| {
+        format!(
+            "Failed to read app-mappings.json from {:?}: {}",
+            mappings_path, e
+        )
+    })?;
 
     let mappings: Value = serde_json::from_str(&mappings_content)
         .map_err(|e| format!("Failed to parse app-mappings.json: {}", e))?;
 
     Ok(mappings)
+}
+
+#[tauri::command]
+async fn get_categories(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    load_categories(app_handle).await
+}
+
+#[tauri::command]
+async fn get_app_mappings(app_handle: tauri::AppHandle) -> Result<Value, String> {
+    load_app_mappings(app_handle).await
+}
+
+#[tauri::command]
+async fn add_category(category: Value) -> Result<(), String> {
+    let categories_path = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("data")
+        .join("categories.json");
+
+    // Read existing categories
+    let categories_content = std::fs::read_to_string(&categories_path)
+        .map_err(|e| format!("Failed to read categories.json: {}", e))?;
+
+    let mut categories_data: Value = serde_json::from_str(&categories_content)
+        .map_err(|e| format!("Failed to parse categories.json: {}", e))?;
+
+    // Add new category to the array
+    if let Some(categories_array) = categories_data
+        .get_mut("categories")
+        .and_then(|c| c.as_array_mut())
+    {
+        categories_array.push(category);
+    }
+
+    // Write back to file
+    let updated_content = serde_json::to_string_pretty(&categories_data)
+        .map_err(|e| format!("Failed to serialize categories: {}", e))?;
+
+    std::fs::write(&categories_path, updated_content)
+        .map_err(|e| format!("Failed to write categories.json: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_category(category: Value) -> Result<(), String> {
+    let categories_path = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("data")
+        .join("categories.json");
+
+    // Read existing categories
+    let categories_content = std::fs::read_to_string(&categories_path)
+        .map_err(|e| format!("Failed to read categories.json: {}", e))?;
+
+    let mut categories_data: Value = serde_json::from_str(&categories_content)
+        .map_err(|e| format!("Failed to parse categories.json: {}", e))?;
+
+    // Find and update the category
+    if let Some(categories_array) = categories_data
+        .get_mut("categories")
+        .and_then(|c| c.as_array_mut())
+    {
+        if let Some(category_id) = category.get("id").and_then(|id| id.as_str()) {
+            for existing_category in categories_array.iter_mut() {
+                if let Some(existing_id) = existing_category.get("id").and_then(|id| id.as_str()) {
+                    if existing_id == category_id {
+                        *existing_category = category.clone();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Write back to file
+    let updated_content = serde_json::to_string_pretty(&categories_data)
+        .map_err(|e| format!("Failed to serialize categories: {}", e))?;
+
+    std::fs::write(&categories_path, updated_content)
+        .map_err(|e| format!("Failed to write categories.json: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_category(category_id: String) -> Result<(), String> {
+    let categories_path = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("data")
+        .join("categories.json");
+
+    // Read existing categories
+    let categories_content = std::fs::read_to_string(&categories_path)
+        .map_err(|e| format!("Failed to read categories.json: {}", e))?;
+
+    let mut categories_data: Value = serde_json::from_str(&categories_content)
+        .map_err(|e| format!("Failed to parse categories.json: {}", e))?;
+
+    // Remove the category
+    if let Some(categories_array) = categories_data
+        .get_mut("categories")
+        .and_then(|c| c.as_array_mut())
+    {
+        categories_array
+            .retain(|category| category.get("id").and_then(|id| id.as_str()) != Some(&category_id));
+    }
+
+    // Write back to file
+    let updated_content = serde_json::to_string_pretty(&categories_data)
+        .map_err(|e| format!("Failed to serialize categories: {}", e))?;
+
+    std::fs::write(&categories_path, updated_content)
+        .map_err(|e| format!("Failed to write categories.json: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_app_mapping(category: String, apps: Vec<String>) -> Result<(), String> {
+    let mappings_path = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("data")
+        .join("app-mappings.json");
+
+    // Read existing mappings
+    let mappings_content = std::fs::read_to_string(&mappings_path)
+        .map_err(|e| format!("Failed to read app-mappings.json: {}", e))?;
+
+    let mut mappings_data: Value = serde_json::from_str(&mappings_content)
+        .map_err(|e| format!("Failed to parse app-mappings.json: {}", e))?;
+
+    // Update the mapping
+    if let Some(mappings_array) = mappings_data
+        .get_mut("mappings")
+        .and_then(|m| m.as_array_mut())
+    {
+        for mapping in mappings_array.iter_mut() {
+            if let Some(mapping_category) = mapping.get("category").and_then(|c| c.as_str()) {
+                if mapping_category == category {
+                    *mapping = serde_json::json!({
+                        "category": category,
+                        "apps": apps
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    // Write back to file
+    let updated_content = serde_json::to_string_pretty(&mappings_data)
+        .map_err(|e| format!("Failed to serialize mappings: {}", e))?;
+
+    std::fs::write(&mappings_path, updated_content)
+        .map_err(|e| format!("Failed to write app-mappings.json: {}", e))?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -633,6 +856,12 @@ pub fn run() {
             toggle_tracking,
             load_categories,
             load_app_mappings,
+            get_categories,
+            get_app_mappings,
+            add_category,
+            update_category,
+            delete_category,
+            update_app_mapping,
             update_activity_category
         ])
         .run(tauri::generate_context!())

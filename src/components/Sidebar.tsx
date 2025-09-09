@@ -6,6 +6,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,11 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       id: "activity-log",
       label: "Activity Log",
       icon: Activity,
+    },
+    {
+      id: "categories",
+      label: "Categories",
+      icon: Tag,
     },
     {
       id: "settings",
