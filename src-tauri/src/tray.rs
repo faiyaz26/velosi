@@ -1,5 +1,12 @@
 use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::tray::MouseButton;
+use tauri::tray::MouseButtonState;
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
+use tauri::{Manager, State};
+
+use crate::AppState;
+use crate::{activity, commands};
 
 pub struct TrayManager;
 
@@ -58,6 +65,136 @@ impl TrayManager {
         };
 
         Ok(menu)
+    }
+
+    /// Create the tray icon, wire menu and icon events, and build the tray.
+    pub fn create_tray(
+        app: &AppHandle,
+        is_tracking: bool,
+        pause_info: Option<(u64, bool)>,
+    ) -> Result<(), String> {
+        // Create the menu first
+        let menu = Self::create_menu(app, is_tracking, pause_info)?;
+
+        // Build tray icon and wire event handlers
+        let _tray = TrayIconBuilder::with_id("main")
+            .tooltip("Velosi Tracker - Tracking Active")
+            .icon(
+                app.default_window_icon()
+                    .ok_or("missing default icon")?
+                    .clone(),
+            )
+            .menu(&menu)
+            .on_menu_event(move |app, event| match event.id.as_ref() {
+                "toggle" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let app_handle = app_clone.clone();
+                        let state: State<'_, AppState> = app_clone.state();
+                        if let Err(e) = commands::toggle_tracking(state, app_handle).await {
+                            eprintln!("Failed to toggle tracking: {}", e);
+                        }
+                    });
+                }
+                "dashboard" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "pause_1min" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        activity::handle_pause_operation(
+                            app_clone,
+                            Some(60),
+                            "pause tracking for 1 minute",
+                        )
+                        .await;
+                    });
+                }
+                "pause_5min" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        activity::handle_pause_operation(
+                            app_clone,
+                            Some(300),
+                            "pause tracking for 5 minutes",
+                        )
+                        .await;
+                    });
+                }
+                "pause_30min" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        activity::handle_pause_operation(
+                            app_clone,
+                            Some(1800),
+                            "pause tracking for 30 minutes",
+                        )
+                        .await;
+                    });
+                }
+                "pause_1hour" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        activity::handle_pause_operation(
+                            app_clone,
+                            Some(3600),
+                            "pause tracking for 1 hour",
+                        )
+                        .await;
+                    });
+                }
+                "pause_until_tomorrow" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        activity::handle_pause_operation(
+                            app_clone,
+                            None,
+                            "pause tracking until tomorrow",
+                        )
+                        .await;
+                    });
+                }
+                "pause_indefinitely" => {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        activity::handle_pause_operation(
+                            app_clone,
+                            None,
+                            "pause tracking indefinitely",
+                        )
+                        .await;
+                    });
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    let app = tray.app_handle();
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            })
+            .build(app)
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
     }
 
     pub async fn update_menu(
