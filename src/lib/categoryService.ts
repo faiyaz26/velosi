@@ -3,18 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 interface Category {
   id: string;
   name: string;
-  description: string;
   color: string;
-  icon: string;
+  parent_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface AppMapping {
-  category: string;
+  category_id: string;
   apps: string[];
-}
-
-interface CategoriesConfig {
-  categories: Category[];
 }
 
 interface MappingsConfig {
@@ -31,12 +28,10 @@ class CategoryService {
 
     try {
       // Load categories and mappings from Tauri backend
-      const categoriesConfig: CategoriesConfig = await invoke(
-        "load_categories"
-      );
-      const mappingsConfig: MappingsConfig = await invoke("load_app_mappings");
+      const categories: Category[] = await invoke("load_categories");
+      const mappingsConfig: MappingsConfig = await invoke("get_app_mappings");
 
-      this.categories = categoriesConfig.categories;
+      this.categories = categories;
 
       // Build app name to category mapping
       this.buildAppMappings(mappingsConfig.mappings);
@@ -66,8 +61,8 @@ class CategoryService {
         const appNames = appString.split("|").map((name) => name.trim());
         appNames.forEach((appName) => {
           // Store both exact match and lowercase for case-insensitive matching
-          this.appMappings.set(appName, mapping.category);
-          this.appMappings.set(appName.toLowerCase(), mapping.category);
+          this.appMappings.set(appName, mapping.category_id);
+          this.appMappings.set(appName.toLowerCase(), mapping.category_id);
         });
       });
     });
@@ -75,48 +70,55 @@ class CategoryService {
 
   private loadDefaultCategories(): void {
     // Fallback categories if loading fails
+    const now = new Date().toISOString();
     this.categories = [
       {
         id: "development",
         name: "Development",
-        description: "Code editors, IDEs, and development tools",
         color: "#3b82f6",
-        icon: "code",
+        parent_id: undefined,
+        created_at: now,
+        updated_at: now,
       },
       {
         id: "productive",
         name: "Productive",
-        description: "Office applications and productivity tools",
         color: "#10b981",
-        icon: "briefcase",
+        parent_id: undefined,
+        created_at: now,
+        updated_at: now,
       },
       {
         id: "communication",
         name: "Communication",
-        description: "Email, messaging, and communication tools",
         color: "#f59e0b",
-        icon: "message-circle",
+        parent_id: undefined,
+        created_at: now,
+        updated_at: now,
       },
       {
         id: "social",
         name: "Social",
-        description: "Social media and networking applications",
         color: "#ef4444",
-        icon: "users",
+        parent_id: undefined,
+        created_at: now,
+        updated_at: now,
       },
       {
         id: "entertainment",
         name: "Entertainment",
-        description: "Media players, games, and entertainment apps",
         color: "#8b5cf6",
-        icon: "play",
+        parent_id: undefined,
+        created_at: now,
+        updated_at: now,
       },
       {
         id: "unknown",
         name: "Unknown",
-        description: "Uncategorized applications",
         color: "#6b7280",
-        icon: "help-circle",
+        parent_id: undefined,
+        created_at: now,
+        updated_at: now,
       },
     ];
   }
@@ -165,9 +167,10 @@ class CategoryService {
       this.getCategoryById("unknown") || {
         id: "unknown",
         name: "Unknown",
-        description: "Uncategorized application",
         color: "#6b7280",
-        icon: "help-circle",
+        parent_id: undefined,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
     );
   }

@@ -146,7 +146,9 @@ export function Dashboard() {
 
   const pauseForDuration = async (minutes: number) => {
     try {
-      await invoke("pause_tracking_for_duration", { minutes });
+      await invoke("pause_tracking_for_duration", {
+        duration_seconds: minutes * 60,
+      });
       setIsTracking(false);
       loadPauseStatus();
     } catch (error) {

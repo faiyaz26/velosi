@@ -74,11 +74,9 @@ function Categorization() {
     try {
       setIsLoading(true);
       console.log("🔄 Loading categories...");
-      const response = await invoke<{ categories: Category[] }>(
-        "get_categories"
-      );
+      const response = await invoke<Category[]>("get_categories");
       console.log("✅ Categories response:", response);
-      const loadedCategories = response?.categories || [];
+      const loadedCategories = response || [];
       console.log(
         "📊 Extracted categories:",
         loadedCategories,
@@ -166,7 +164,10 @@ function Categorization() {
       };
 
       console.log("Adding category:", categoryData);
-      await invoke("add_category", { category: categoryData });
+      await invoke("add_category", {
+        name: categoryData.name,
+        color: categoryData.color,
+      });
 
       await loadCategories();
       setNewCategory({ name: "", color: "#3b82f6" });
