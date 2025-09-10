@@ -13,6 +13,18 @@ use tokio::time::{interval, Duration, Instant};
 use uuid::Uuid;
 
 use database::Database;
+
+// Helper function to handle pause operations
+async fn handle_pause_operation(
+    app_handle: AppHandle,
+    duration_seconds: Option<u64>,
+    operation_name: &str,
+) {
+    let state: State<'_, AppState> = app_handle.state();
+    if let Err(e) = commands::pause_tracking(state, app_handle.clone(), duration_seconds).await {
+        eprintln!("Failed to {}: {}", operation_name, e);
+    }
+}
 use models::{ActivityCategory, ActivityEntry};
 use tracker::{ActivityTracker, CurrentActivity};
 
@@ -349,75 +361,63 @@ pub fn run() {
                     "pause_1min" => {
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let app_handle = app_clone.clone();
-                            let state: State<'_, AppState> = app_clone.state();
-                            if let Err(e) =
-                                commands::pause_tracking(state, app_handle, Some(60)).await
-                            // 1 minute = 60 seconds
-                            {
-                                eprintln!("Failed to pause tracking: {}", e);
-                            }
+                            handle_pause_operation(
+                                app_clone,
+                                Some(60),
+                                "pause tracking for 1 minute",
+                            )
+                            .await;
                         });
                     }
                     "pause_5min" => {
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let app_handle = app_clone.clone();
-                            let state: State<'_, AppState> = app_clone.state();
-                            if let Err(e) =
-                                commands::pause_tracking(state, app_handle, Some(300)).await
-                            // 5 minutes = 300 seconds
-                            {
-                                eprintln!("Failed to pause tracking: {}", e);
-                            }
+                            handle_pause_operation(
+                                app_clone,
+                                Some(300),
+                                "pause tracking for 5 minutes",
+                            )
+                            .await;
                         });
                     }
                     "pause_30min" => {
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let app_handle = app_clone.clone();
-                            let state: State<'_, AppState> = app_clone.state();
-                            if let Err(e) =
-                                commands::pause_tracking(state, app_handle, Some(1800)).await
-                            // 30 minutes = 1800 seconds
-                            {
-                                eprintln!("Failed to pause tracking: {}", e);
-                            }
+                            handle_pause_operation(
+                                app_clone,
+                                Some(1800),
+                                "pause tracking for 30 minutes",
+                            )
+                            .await;
                         });
                     }
                     "pause_1hour" => {
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let app_handle = app_clone.clone();
-                            let state: State<'_, AppState> = app_clone.state();
-                            if let Err(e) =
-                                commands::pause_tracking(state, app_handle, Some(3600)).await
-                            // 1 hour = 3600 seconds
-                            {
-                                eprintln!("Failed to pause tracking: {}", e);
-                            }
+                            handle_pause_operation(
+                                app_clone,
+                                Some(3600),
+                                "pause tracking for 1 hour",
+                            )
+                            .await;
                         });
                     }
                     "pause_until_tomorrow" => {
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let app_handle = app_clone.clone();
-                            let state: State<'_, AppState> = app_clone.state();
-                            if let Err(e) = commands::pause_tracking(state, app_handle, None).await
-                            {
-                                eprintln!("Failed to pause tracking until tomorrow: {}", e);
-                            }
+                            handle_pause_operation(
+                                app_clone,
+                                None,
+                                "pause tracking until tomorrow",
+                            )
+                            .await;
                         });
                     }
                     "pause_indefinitely" => {
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let app_handle = app_clone.clone();
-                            let state: State<'_, AppState> = app_clone.state();
-                            if let Err(e) = commands::pause_tracking(state, app_handle, None).await
-                            {
-                                eprintln!("Failed to pause tracking indefinitely: {}", e);
-                            }
+                            handle_pause_operation(app_clone, None, "pause tracking indefinitely")
+                                .await;
                         });
                     }
                     "quit" => {
