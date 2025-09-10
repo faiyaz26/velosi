@@ -156,13 +156,15 @@ pub struct AppSummary {
 }
 
 impl ActivityCategory {
-    pub fn from_app_name(app_name: &str, bundle_id: Option<&str>) -> Self {
-        Self::from_app_name_and_url(app_name, bundle_id, None)
+    #[allow(dead_code)]
+    pub fn from_app_name(app_name: &str, _bundle_id: Option<&str>) -> Self {
+        Self::from_app_name_and_url(app_name, _bundle_id, None)
     }
 
+    #[allow(dead_code)]
     pub fn from_app_name_and_url(
         app_name: &str,
-        bundle_id: Option<&str>,
+        _bundle_id: Option<&str>,
         url: Option<&str>,
     ) -> Self {
         // First, try URL-based categorization if URL is available
@@ -217,6 +219,7 @@ impl ActivityCategory {
         }
     }
 
+    #[allow(dead_code)]
     fn from_url(url: &str) -> Option<Self> {
         let url_lower = url.to_lowercase();
 

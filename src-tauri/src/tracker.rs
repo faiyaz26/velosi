@@ -124,6 +124,7 @@ impl ActivityTracker {
     }
 
     #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
     pub fn test_permissions(&self) -> String {
         if self.check_accessibility_permissions() {
             "✅ Accessibility permissions are working correctly!".to_string()
@@ -869,6 +870,7 @@ impl ActivityTracker {
         true
     }
 
+    #[allow(dead_code)]
     pub fn update_last_input_time(&mut self) {
         self.user_activity.last_input_time = SystemTime::now();
         self.user_activity.is_active = true;

@@ -1,5 +1,4 @@
 use chrono::Utc;
-use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::time::{interval, Duration, Instant};
 use uuid::Uuid;
@@ -7,7 +6,6 @@ use uuid::Uuid;
 use crate::commands;
 use crate::database::Database;
 use crate::models::{ActivityCategory, ActivityEntry};
-use crate::tracker::{ActivityTracker, CurrentActivity};
 use crate::AppState;
 
 /// Helper to handle pause operations initiated from the tray/menu.

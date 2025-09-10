@@ -6,17 +6,12 @@ mod models;
 mod tracker;
 mod tray;
 
-use chrono::Utc;
 use std::sync::{Arc, Mutex};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
-use tokio::time::{interval, Duration, Instant};
-use uuid::Uuid;
+use tauri::{Manager, WindowEvent};
+use tokio::time::Instant;
 
 use database::Database;
 
-// ...existing code... (moved helper to `activity` module)
-use models::{ActivityCategory, ActivityEntry};
 use tracker::{ActivityTracker, CurrentActivity};
 
 // Application state
@@ -25,7 +20,7 @@ pub struct AppState {
     tracker: Arc<Mutex<ActivityTracker>>,
     is_tracking: Arc<Mutex<bool>>,
     pause_until: Arc<Mutex<Option<Instant>>>,
-    is_paused_indefinitely: Arc<Mutex<bool>>,
+    // is_paused_indefinitely: Arc<Mutex<bool>>, // removed - not used
     current_activity: Arc<Mutex<Option<CurrentActivity>>>,
 }
 
@@ -79,14 +74,10 @@ pub fn run() {
                 tracker: Arc::new(Mutex::new(ActivityTracker::new())),
                 is_tracking: Arc::new(Mutex::new(true)), // Start tracking by default
                 pause_until: Arc::new(Mutex::new(None)),
-                is_paused_indefinitely: Arc::new(Mutex::new(false)),
                 current_activity: Arc::new(Mutex::new(None)),
             };
 
             app.manage(state);
-
-            // Create initial tray menu using the tray module
-            let menu = tray::TrayManager::create_menu(app, true, None)?; // Start with tracking active, no pause info
 
             // Setup the tray icon and handlers via the tray module
             tray::TrayManager::create_tray(&app_handle, true, None)?;

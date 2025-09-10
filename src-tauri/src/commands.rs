@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::time::{Duration, Instant};
 use uuid::Uuid;
 
-use crate::models::{ActivityEntry, ActivitySummary, TimelineData, UrlMapping, UserCategory};
+use crate::models::{ActivityEntry, ActivitySummary, TimelineData, UserCategory};
 use crate::tracker::CurrentActivity;
 use crate::tray::TrayManager;
 use crate::AppState;

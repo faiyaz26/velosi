@@ -497,6 +497,7 @@ impl Database {
         Ok(mappings)
     }
 
+    #[allow(dead_code)]
     pub async fn update_app_mapping(&self, mapping: &AppMapping) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
@@ -516,6 +517,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn delete_app_mapping(&self, id: &Uuid) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM app_mappings WHERE id = ?1")
             .bind(id.to_string())
@@ -616,6 +618,7 @@ impl Database {
         Ok(mappings)
     }
 
+    #[allow(dead_code)]
     pub async fn update_url_mapping(&self, mapping: &UrlMapping) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
@@ -649,6 +652,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn add_simple_url_mapping(
         &self,
         category_id: &str,
