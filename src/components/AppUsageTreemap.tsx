@@ -26,15 +26,6 @@ interface AppUsageTreemapProps {
   activities: ActivityEntry[];
 }
 
-interface TreemapData {
-  name: string;
-  value: number;
-  fill: string;
-  category: string;
-  hours: number;
-  minutes: number;
-}
-
 const COLORS = [
   "#3b82f6", // blue-500
   "#10b981", // emerald-500
@@ -104,7 +95,7 @@ export function AppUsageTreemap({ activities }: AppUsageTreemapProps) {
       .sort((a, b) => b.value - a.value);
   }, [activities, isInitialized, categoryService]);
 
-  console.log("Treemap data:", treemapData); // Debug log
+  // treemapData prepared for rendering
 
   if (treemapData.length === 0) {
     return (

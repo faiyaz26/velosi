@@ -48,8 +48,8 @@ function Categorization() {
   });
 
   // Search states for App mappings tab
-  const [categorySearch, setCategorySearch] = useState("");
-  const [appSearch, setAppSearch] = useState("");
+  const [categorySearch, _setCategorySearch] = useState("");
+  const [appSearch, _setAppSearch] = useState("");
 
   // Two-panel state for App mappings
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
@@ -180,16 +180,7 @@ function Categorization() {
     }
   };
 
-  const handleDeleteCategory = async (categoryId: string) => {
-    try {
-      console.log("Deleting category:", categoryId);
-      await invoke("delete_category", { categoryId });
-      await loadCategories();
-    } catch (error) {
-      console.error("Failed to delete category:", error);
-      alert("Failed to delete category: " + error);
-    }
-  };
+  // delete handler intentionally removed; feature not used in UI at the moment
 
   const handleAddApp = async () => {
     if (!selectedCategory || !newAppName.trim()) {

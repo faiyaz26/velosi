@@ -82,7 +82,7 @@ export function TimelineChart({
   dateRange,
 }: TimelineChartProps) {
   const [
-    selectedActivity,
+    _selectedActivity,
     setSelectedActivity,
   ] = useState<ActivityEntry | null>(null);
   const { isInitialized, categoryService } = useCategoryService();

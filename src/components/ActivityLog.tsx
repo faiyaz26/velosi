@@ -15,7 +15,6 @@ import { RingChart } from "@/components/RingChart";
 import {
   Activity,
   Clock,
-  Calendar,
   RefreshCw,
   ExternalLink,
   Edit3,

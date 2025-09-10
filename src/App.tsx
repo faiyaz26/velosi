@@ -7,7 +7,7 @@ import Categorization from "@/components/Categorization";
 import { Settings } from "@/components/Settings";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import { Minimize2, X } from "lucide-react";
+import { Minimize2 } from "lucide-react";
 import { categoryService } from "@/lib/categoryService";
 
 function App() {
@@ -23,14 +23,6 @@ function App() {
       await invoke("hide_window");
     } catch (error) {
       console.error("Failed to minimize window:", error);
-    }
-  };
-
-  const handleClose = async () => {
-    try {
-      await invoke("hide_window");
-    } catch (error) {
-      console.error("Failed to close app:", error);
     }
   };
 
@@ -72,14 +64,7 @@ function App() {
             >
               <Minimize2 className="h-4 w-4" />
             </Button>
-            <Button
-              onClick={handleClose}
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-1 no-drag"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            {/* removed close button - using minimize (hide) only */}
           </div>
         </div>
 
