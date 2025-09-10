@@ -2,6 +2,7 @@ mod database;
 mod migrations;
 mod models;
 mod tracker;
+mod tray;
 
 use chrono::{NaiveDate, Utc};
 use serde_json::Value;
@@ -15,6 +16,7 @@ use database::Database;
 use models::{ActivityCategory, ActivityEntry, ActivitySummary, TimelineData, UserCategory};
 
 use tracker::{ActivityTracker, CurrentActivity};
+use tray::TrayManager;
 
 // Application state
 pub struct AppState {
@@ -23,6 +25,37 @@ pub struct AppState {
     is_tracking: Arc<Mutex<bool>>,
     pause_until: Arc<Mutex<Option<Instant>>>,
     is_paused_indefinitely: Arc<Mutex<bool>>,
+}
+
+// Helper function to get pause info for tray menu
+async fn get_pause_info(state: &AppState, is_tracking: bool) -> Option<(u64, bool)> {
+    if !is_tracking {
+        if let Ok(pause_until) = state.pause_until.lock() {
+            if let Some(pause_time) = *pause_until {
+                let now = Instant::now();
+                let remaining_seconds = if pause_time > now {
+                    (pause_time - now).as_secs()
+                } else {
+                    0
+                };
+                Some((remaining_seconds, false))
+            } else {
+                // Indefinite pause (pause_until is None but tracking is false)
+                Some((0, true))
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+// Helper function to update tray menu with pause info
+async fn update_tray_with_state(app_handle: &AppHandle, is_tracking: bool) -> Result<(), String> {
+    let state: State<'_, AppState> = app_handle.state();
+    let pause_info = get_pause_info(&state, is_tracking).await;
+    tray::TrayManager::update_menu(app_handle, is_tracking, pause_info).await
 }
 
 // Tauri commands
@@ -34,7 +67,7 @@ async fn start_tracking(state: State<'_, AppState>, app_handle: AppHandle) -> Re
     } // MutexGuard is dropped here
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, true).await?;
+    update_tray_with_state(&app_handle, true).await?;
     app_handle
         .emit("tracking-status-changed", true)
         .map_err(|e| e.to_string())?;
@@ -50,7 +83,7 @@ async fn stop_tracking(state: State<'_, AppState>, app_handle: AppHandle) -> Res
     } // MutexGuard is dropped here
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, false).await?;
+    update_tray_with_state(&app_handle, false).await?;
     app_handle
         .emit("tracking-status-changed", false)
         .map_err(|e| e.to_string())?;
@@ -219,7 +252,7 @@ async fn toggle_tracking(
     };
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, new_status).await?;
+    update_tray_with_state(&app_handle, new_status).await?;
     app_handle
         .emit("tracking-status-changed", new_status)
         .map_err(|e| e.to_string())?;
@@ -246,7 +279,7 @@ async fn pause_tracking_for_duration(
     }
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, false).await?;
+    update_tray_with_state(&app_handle, false).await?;
     app_handle
         .emit("tracking-status-changed", false)
         .map_err(|e| e.to_string())?;
@@ -282,7 +315,7 @@ async fn pause_tracking_until_tomorrow(
     }
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, false).await?;
+    update_tray_with_state(&app_handle, false).await?;
     app_handle
         .emit("tracking-status-changed", false)
         .map_err(|e| e.to_string())?;
@@ -308,7 +341,7 @@ async fn pause_tracking_indefinitely(
     }
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, false).await?;
+    update_tray_with_state(&app_handle, false).await?;
     app_handle
         .emit("tracking-status-changed", false)
         .map_err(|e| e.to_string())?;
@@ -334,7 +367,7 @@ async fn resume_tracking_now(
     }
 
     // Update tray menu and emit event to frontend
-    update_tray_menu(&app_handle, true).await?;
+    update_tray_with_state(&app_handle, true).await?;
     app_handle
         .emit("tracking-status-changed", true)
         .map_err(|e| e.to_string())?;
@@ -680,111 +713,6 @@ async fn update_activity_category(
     result
 }
 
-fn create_tray_menu<T>(
-    app: &T,
-    is_tracking: bool,
-    pause_info: Option<(u64, bool)>, // (remaining_seconds, is_indefinite)
-) -> Result<tauri::menu::Menu<tauri::Wry>, String>
-where
-    T: tauri::Manager<tauri::Wry>,
-{
-    use tauri::menu::{Menu, MenuItem};
-
-    let status_text = if is_tracking {
-        "🟢 Tracking Active".to_string()
-    } else if let Some((_, is_indefinite)) = pause_info {
-        if is_indefinite {
-            "🔴 Paused Indefinitely".to_string()
-        } else {
-            "🔴 Paused (Timed)".to_string()
-        }
-    } else {
-        "🔴 Tracking Paused".to_string()
-    };
-    let toggle_text = if is_tracking {
-        "Pause Tracking"
-    } else {
-        "Resume Tracking"
-    };
-
-    // Create menu items
-    let status_item = MenuItem::with_id(app, "status", status_text, false, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let toggle_item = MenuItem::with_id(app, "toggle", toggle_text, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-
-    let dashboard_item = MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let quit_item =
-        MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).map_err(|e| e.to_string())?;
-
-    // Create pause submenu items only when tracking is active
-    let menu = if is_tracking {
-        let pause_submenu = create_pause_submenu(app)?;
-
-        Menu::with_items(
-            app,
-            &[&status_item, &pause_submenu, &dashboard_item, &quit_item],
-        )
-        .map_err(|e| e.to_string())?
-    } else {
-        Menu::with_items(
-            app,
-            &[&status_item, &toggle_item, &dashboard_item, &quit_item],
-        )
-        .map_err(|e| e.to_string())?
-    };
-
-    Ok(menu)
-}
-
-async fn update_tray_menu(app_handle: &AppHandle, is_tracking: bool) -> Result<(), String> {
-    // Get pause status if not tracking
-    let pause_info = if !is_tracking {
-        let state: State<'_, AppState> = app_handle.state();
-        let pause_until = state.pause_until.lock().map_err(|e| e.to_string())?;
-
-        if let Some(pause_time) = *pause_until {
-            let now = Instant::now();
-            let remaining_seconds = if pause_time > now {
-                (pause_time - now).as_secs()
-            } else {
-                0
-            };
-            Some((remaining_seconds, false))
-        } else {
-            // Indefinite pause (pause_until is None but tracking is false)
-            Some((0, true))
-        }
-    } else {
-        None
-    };
-
-    let menu = create_tray_menu(app_handle, is_tracking, pause_info)?;
-
-    // Update the tray menu
-    if let Some(tray) = app_handle.tray_by_id("main") {
-        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
-
-        // Update tooltip to reflect current status
-        let tooltip = if is_tracking {
-            "Velosi - Tracking Active".to_string()
-        } else if let Some((_, is_indefinite)) = pause_info {
-            if is_indefinite {
-                "Velosi - Paused Indefinitely".to_string()
-            } else {
-                "Velosi - Paused (Timed)".to_string()
-            }
-        } else {
-            "Velosi - Tracking Paused".to_string()
-        };
-        tray.set_tooltip(Some(&tooltip))
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
-}
-
 async fn setup_database() -> Result<Database, Box<dyn std::error::Error>> {
     // Create data directory if it doesn't exist
     let app_data_dir = dirs::data_dir()
@@ -803,65 +731,6 @@ async fn setup_database() -> Result<Database, Box<dyn std::error::Error>> {
         eprintln!("Database error: {:?}", e);
         e.into()
     })
-}
-
-fn create_pause_submenu<T>(app: &T) -> Result<tauri::menu::Submenu<tauri::Wry>, String>
-where
-    T: tauri::Manager<tauri::Wry>,
-{
-    use tauri::menu::{MenuItem, Submenu};
-
-    // Create pause submenu items
-    let pause_1min = MenuItem::with_id(app, "pause_1min", "Pause for 1 minute", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let pause_5min =
-        MenuItem::with_id(app, "pause_5min", "Pause for 5 minutes", true, None::<&str>)
-            .map_err(|e| e.to_string())?;
-    let pause_30min = MenuItem::with_id(
-        app,
-        "pause_30min",
-        "Pause for 30 minutes",
-        true,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
-    let pause_1hour = MenuItem::with_id(app, "pause_1hour", "Pause for 1 hour", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let pause_until_tomorrow = MenuItem::with_id(
-        app,
-        "pause_until_tomorrow",
-        "Pause until tomorrow",
-        true,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
-    let pause_indefinitely = MenuItem::with_id(
-        app,
-        "pause_indefinitely",
-        "Pause indefinitely",
-        true,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Create pause submenu
-    let pause_submenu = Submenu::with_id_and_items(
-        app,
-        "pause_menu",
-        "Pause Options",
-        true,
-        &[
-            &pause_1min,
-            &pause_5min,
-            &pause_30min,
-            &pause_1hour,
-            &pause_until_tomorrow,
-            &pause_indefinitely,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(pause_submenu)
 }
 
 // Helper function to categorize activity based on app name and URL with database mappings only
@@ -948,7 +817,7 @@ async fn start_activity_tracking(app_handle: AppHandle) {
                     // Update tray menu
                     let app_handle_clone = app_handle.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = update_tray_menu(&app_handle_clone, true).await {
+                        if let Err(e) = update_tray_with_state(&app_handle_clone, true).await {
                             eprintln!("Failed to update tray menu: {}", e);
                         }
                         if let Err(e) = app_handle_clone.emit("tracking-status-changed", true) {
@@ -1135,8 +1004,8 @@ pub fn run() {
 
             app.manage(state);
 
-            // Create initial tray menu using the shared function
-            let menu = create_tray_menu(app, true, None)?; // Start with tracking active, no pause info
+            // Create initial tray menu using the tray module
+            let menu = tray::TrayManager::create_menu(app, true, None)?; // Start with tracking active, no pause info
 
             // Setup tray icon
             let _tray = TrayIconBuilder::with_id("main")
