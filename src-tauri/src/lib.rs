@@ -1,6 +1,7 @@
 mod activity;
 mod commands;
 mod database;
+mod focus_mode;
 mod migrations;
 mod models;
 mod tracker;
@@ -22,6 +23,15 @@ pub struct AppState {
     pause_until: Arc<Mutex<Option<Instant>>>,
     // is_paused_indefinitely: Arc<Mutex<bool>>, // removed - not used
     current_activity: Arc<Mutex<Option<CurrentActivity>>>,
+    // Focus mode state
+    focus_mode_enabled: Arc<Mutex<bool>>,
+    focus_mode_allowed_categories: Arc<Mutex<Vec<String>>>,
+    recently_blocked_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
+    temporarily_allowed_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
+    // App category cache for faster lookups (app_name -> category_id)
+    app_category_cache: Arc<Mutex<std::collections::HashMap<String, String>>>,
+    // Recently hidden apps to avoid tracking them immediately after hiding
+    recently_hidden_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
 }
 
 // =============================================================================
@@ -68,13 +78,29 @@ pub fn run() {
                 .block_on(setup_database())
                 .expect("Failed to setup database");
 
+            // Load focus mode preferences from database
+            let db_arc = Arc::new(db);
+            let focus_enabled = rt
+                .block_on(db_arc.get_focus_mode_enabled())
+                .unwrap_or(false);
+            let allowed_categories = rt
+                .block_on(db_arc.get_focus_mode_allowed_categories())
+                .unwrap_or_default();
+
             // Initialize application state
             let state = AppState {
-                db: Arc::new(db),
+                db: db_arc,
                 tracker: Arc::new(Mutex::new(ActivityTracker::new())),
                 is_tracking: Arc::new(Mutex::new(true)), // Start tracking by default
                 pause_until: Arc::new(Mutex::new(None)),
                 current_activity: Arc::new(Mutex::new(None)),
+                // Focus mode state (loaded from database)
+                focus_mode_enabled: Arc::new(Mutex::new(focus_enabled)),
+                focus_mode_allowed_categories: Arc::new(Mutex::new(allowed_categories)),
+                recently_blocked_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                temporarily_allowed_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                app_category_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                recently_hidden_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
             };
 
             app.manage(state);
@@ -145,7 +171,17 @@ pub fn run() {
             commands::get_permission_status,
             commands::remove_app_mapping,
             commands::add_url_mapping,
-            commands::remove_url_mapping
+            commands::remove_url_mapping,
+            // Focus mode commands
+            commands::enable_focus_mode,
+            commands::disable_focus_mode,
+            commands::get_focus_mode_status,
+            commands::set_focus_mode_categories,
+            commands::get_focus_mode_categories,
+            commands::check_app_focus_allowed,
+            commands::temporarily_allow_app,
+            commands::get_focus_mode_allowed_apps,
+            commands::remove_focus_mode_allowed_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

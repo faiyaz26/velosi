@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Tag,
+  Focus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,11 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       id: "categorization",
       label: "Categorization",
       icon: Tag,
+    },
+    {
+      id: "focus-mode",
+      label: "Focus Mode",
+      icon: Focus,
     },
     {
       id: "settings",

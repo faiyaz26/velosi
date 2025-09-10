@@ -160,10 +160,15 @@ impl ActivityTracker {
                 segment_info: None,
             });
         }
-        // Use AppleScript to get the frontmost application
+        // Use AppleScript to get the frontmost *visible* application (ignore hidden apps)
         let app_script = r#"
             tell application "System Events"
-                set frontApp to first application process whose frontmost is true
+                -- find visible frontmost application processes
+                set procs to (application processes whose frontmost is true and visible is true)
+                if (count of procs) = 0 then
+                    return ""
+                end if
+                set frontApp to item 1 of procs
                 set appName to name of frontApp
                 try
                     set bundleID to bundle identifier of frontApp
@@ -185,7 +190,13 @@ impl ActivityTracker {
         }
 
         let result = String::from_utf8_lossy(&output.stdout);
-        let parts: Vec<&str> = result.trim().split('|').collect();
+        let result_trim = result.trim();
+        // If AppleScript returned an empty string, treat it as no front app
+        if result_trim.is_empty() {
+            return None;
+        }
+
+        let parts: Vec<&str> = result_trim.split('|').collect();
 
         if parts.is_empty() {
             return None;
@@ -230,7 +241,12 @@ impl ActivityTracker {
         // Enhanced AppleScript to get window title with better error handling
         let script = r#"
             tell application "System Events"
-                set frontApp to first application process whose frontmost is true
+                -- find visible frontmost application processes
+                set procs to (application processes whose frontmost is true and visible is true)
+                if (count of procs) = 0 then
+                    return ""
+                end if
+                set frontApp to item 1 of procs
                 set appName to name of frontApp
                 try
                     -- Try to get the window title

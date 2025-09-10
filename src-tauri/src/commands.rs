@@ -659,3 +659,246 @@ pub async fn remove_url_mapping(
         .await
         .map_err(|e| e.to_string())
 }
+
+// =============================================================================
+// FOCUS MODE COMMANDS
+// =============================================================================
+
+#[tauri::command]
+pub async fn enable_focus_mode(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    // Persist to database
+    state
+        .db
+        .set_focus_mode_enabled(true)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Update in-memory state
+    {
+        let mut focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+        *focus_enabled = true;
+    }
+
+    // Emit event to frontend
+    app_handle
+        .emit("focus-mode-changed", true)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn disable_focus_mode(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    // Persist to database
+    state
+        .db
+        .set_focus_mode_enabled(false)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Update in-memory state
+    {
+        let mut focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+        *focus_enabled = false;
+    }
+
+    // Emit event to frontend
+    app_handle
+        .emit("focus-mode-changed", false)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_focus_mode_status(state: State<'_, AppState>) -> Result<bool, String> {
+    // Get from database (authoritative source)
+    state
+        .db
+        .get_focus_mode_enabled()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_focus_mode_categories(
+    state: State<'_, AppState>,
+    categories: Vec<String>,
+) -> Result<(), String> {
+    // Persist to database
+    state
+        .db
+        .set_focus_mode_allowed_categories(&categories)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Update in-memory state
+    let mut allowed_categories = state
+        .focus_mode_allowed_categories
+        .lock()
+        .map_err(|e| e.to_string())?;
+    *allowed_categories = categories;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_focus_mode_categories(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    // Get from database (authoritative source)
+    state
+        .db
+        .get_focus_mode_allowed_categories()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn check_app_focus_allowed(
+    state: State<'_, AppState>,
+    app_name: String,
+    bundle_id: Option<String>,
+) -> Result<bool, String> {
+    // If focus mode is disabled, all apps are allowed
+    let focus_enabled = {
+        let focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+        *focus_enabled
+    };
+
+    if !focus_enabled {
+        return Ok(true);
+    }
+
+    // Always allow velosi app itself
+    if app_name.to_lowercase().contains("velosi")
+        || bundle_id
+            .as_ref()
+            .map_or(false, |bid| bid.to_lowercase().contains("velosi"))
+    {
+        return Ok(true); // Velosi app is always allowed
+    }
+
+    // Check if app is temporarily allowed
+    {
+        let now = tokio::time::Instant::now();
+        let mut allowed_apps = state
+            .temporarily_allowed_apps
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        if let Some(&allowed_time) = allowed_apps.get(&app_name) {
+            // Check if the temporary allowance has expired (30 minutes)
+            if now.duration_since(allowed_time).as_secs() < 30 * 60 {
+                return Ok(true);
+            } else {
+                // Remove expired entry
+                allowed_apps.remove(&app_name);
+            }
+        }
+    }
+
+    let allowed_categories = {
+        let allowed_categories = state
+            .focus_mode_allowed_categories
+            .lock()
+            .map_err(|e| e.to_string())?;
+        allowed_categories.clone()
+    };
+
+    // If no categories are specified, block everything
+    if allowed_categories.is_empty() {
+        return Ok(false);
+    }
+
+    // Get app mappings to determine category
+    let app_mappings = state
+        .db
+        .get_app_mappings()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Find the category for this app
+    for mapping in app_mappings {
+        let patterns: Vec<&str> = mapping.app_pattern.split('|').collect();
+        for pattern in patterns {
+            if app_name
+                .to_lowercase()
+                .contains(&pattern.trim().to_lowercase())
+                || bundle_id.as_ref().map_or(false, |bid| {
+                    bid.to_lowercase().contains(&pattern.trim().to_lowercase())
+                })
+            {
+                // App matches this category
+                return Ok(allowed_categories.contains(&mapping.category_id));
+            }
+        }
+    }
+
+    // App not found in mappings, block by default in focus mode
+    Ok(false)
+}
+
+#[tauri::command]
+pub async fn temporarily_allow_app(
+    state: State<'_, AppState>,
+    app_name: String,
+) -> Result<(), String> {
+    let now = tokio::time::Instant::now();
+
+    // Persist to database (expires in 30 minutes)
+    let expires_at = chrono::Utc::now().timestamp() + (30 * 60); // 30 minutes from now
+    state
+        .db
+        .add_focus_mode_allowed_app(&app_name, Some(expires_at))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Update in-memory state
+    let mut allowed_apps = state
+        .temporarily_allowed_apps
+        .lock()
+        .map_err(|e| e.to_string())?;
+    allowed_apps.insert(app_name.clone(), now);
+
+    println!("✅ Temporarily allowed app: {} for 30 minutes", app_name);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_focus_mode_allowed_apps(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    // Get from database (authoritative source)
+    state
+        .db
+        .get_focus_mode_allowed_apps()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_focus_mode_allowed_app(
+    state: State<'_, AppState>,
+    app_name: String,
+) -> Result<(), String> {
+    // Remove from database
+    state
+        .db
+        .remove_focus_mode_allowed_app(&app_name)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Also remove from in-memory state
+    let mut allowed_apps = state
+        .temporarily_allowed_apps
+        .lock()
+        .map_err(|e| e.to_string())?;
+    allowed_apps.remove(&app_name);
+
+    println!("✅ Removed allowed app: {}", app_name);
+    Ok(())
+}

@@ -78,7 +78,7 @@ impl TrayManager {
 
         // Build tray icon and wire event handlers
         let _tray = TrayIconBuilder::with_id("main")
-            .tooltip("Velosi Tracker - Tracking Active")
+            .tooltip("Velosi - Tracking Active")
             .icon(
                 app.default_window_icon()
                     .ok_or("missing default icon")?

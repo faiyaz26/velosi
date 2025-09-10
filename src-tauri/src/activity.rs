@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::commands;
 use crate::database::Database;
+use crate::focus_mode::FocusMode;
 use crate::models::{ActivityCategory, ActivityEntry};
 use crate::AppState;
 
@@ -83,11 +84,21 @@ pub async fn categorize_activity(
 /// Main activity tracking loop that runs continuously in the background
 pub async fn start_activity_tracking(app_handle: AppHandle) {
     let state: State<'_, AppState> = app_handle.state();
-    let mut interval = interval(Duration::from_secs(5)); // Check every 5 seconds
 
     println!("Starting activity tracking loop...");
 
     loop {
+        // Dynamic interval based on focus mode status
+        let check_interval = {
+            let focus_enabled = state.focus_mode_enabled.lock().unwrap();
+            if *focus_enabled {
+                Duration::from_millis(500) // Much more frequent when focus mode is active (0.5 seconds)
+            } else {
+                Duration::from_secs(5) // Normal interval
+            }
+        };
+
+        let mut interval = interval(check_interval);
         interval.tick().await;
         println!("🔄 Loop tick - checking tracking status...");
 
@@ -156,6 +167,46 @@ pub async fn start_activity_tracking(app_handle: AppHandle) {
                 "Current activity: {} - {}",
                 current.app_name, current.window_title
             );
+
+            // Check if this app was recently hidden - if so, skip it and let the system settle
+            {
+                let now = tokio::time::Instant::now();
+                let mut hidden_apps = state.recently_hidden_apps.lock().unwrap();
+
+                // Clean up old entries (older than 3 seconds)
+                hidden_apps
+                    .retain(|_, &mut hidden_time| now.duration_since(hidden_time).as_secs() < 3);
+
+                // If this app was recently hidden (within 2 seconds), skip it
+                if let Some(&hidden_time) = hidden_apps.get(&current.app_name) {
+                    if now.duration_since(hidden_time).as_secs() < 2 {
+                        println!(
+                            "App '{}' was recently hidden, skipping to let system settle",
+                            current.app_name
+                        );
+                        continue;
+                    }
+                }
+            }
+
+            // Check focus mode before proceeding with activity tracking
+            let focus_mode = FocusMode::new(app_handle.clone());
+            match focus_mode
+                .check_and_block_app(&current.app_name, current.app_bundle_id.as_deref())
+                .await
+            {
+                Ok(is_allowed) => {
+                    if !is_allowed {
+                        println!("App '{}' is blocked by focus mode", current.app_name);
+                        // Give the system a moment to update the frontmost app after hiding
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                        continue; // Skip tracking this blocked app and recheck immediately
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error checking focus mode: {}", e);
+                }
+            }
 
             // Check if there's already an ongoing activity in the database
             match state.db.get_current_activity().await {

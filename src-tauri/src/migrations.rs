@@ -17,12 +17,11 @@ pub fn get_migrations() -> Vec<Migration> {
             description: "create_initial_tables".to_string(),
             sql: include_str!("../migrations/1_create_tables.sql").to_string(),
         },
-        // Add more migrations here as needed
-        // Migration {
-        //     version: 2,
-        //     description: "add_new_column".to_string(),
-        //     sql: include_str!("../migrations/2_add_new_column.sql").to_string(),
-        // },
+        Migration {
+            version: 2,
+            description: "create_focus_mode_preferences".to_string(),
+            sql: include_str!("../migrations/2_create_focus_mode_preferences.sql").to_string(),
+        },
     ]
 }
 

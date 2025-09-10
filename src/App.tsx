@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { ActivityLog } from "@/components/ActivityLog";
 import Categorization from "@/components/Categorization";
+import { FocusMode } from "@/components/FocusMode";
 import { Settings } from "@/components/Settings";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,8 @@ function App() {
         return <ActivityLog />;
       case "categorization":
         return <Categorization />;
+      case "focus-mode":
+        return <FocusMode />;
       case "settings":
         return <Settings />;
       default:

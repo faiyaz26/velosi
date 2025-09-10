@@ -9,7 +9,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Play, Pause, Clock, ChevronDown } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Clock,
+  ChevronDown,
+  Shield,
+  ShieldCheck,
+} from "lucide-react";
 import { RingChart } from "@/components/RingChart";
 import { format } from "date-fns";
 import { useCategoryService } from "@/hooks/useCategoryService";
@@ -72,11 +79,14 @@ export function Dashboard() {
     remaining_seconds: number;
     is_indefinite?: boolean;
   }>({ is_paused: false, remaining_seconds: 0, is_indefinite: false });
+  const [focusModeEnabled, setFocusModeEnabled] = useState(false);
+  const [focusModeCategories, setFocusModeCategories] = useState<string[]>([]);
 
   useEffect(() => {
     loadTodaysActivitySummary();
     loadTrackingStatus();
     loadPauseStatus();
+    loadFocusModeStatus();
 
     // Listen for tracking status changes from tray or other sources
     const unlistenPromise = listen<boolean>(
@@ -91,6 +101,14 @@ export function Dashboard() {
       }
     );
 
+    // Listen for focus mode changes
+    const unlistenFocusPromise = listen<boolean>(
+      "focus-mode-changed",
+      (event) => {
+        setFocusModeEnabled(event.payload);
+      }
+    );
+
     // Auto-refresh every 90 seconds
     const interval = setInterval(() => {
       loadTodaysActivitySummary();
@@ -100,8 +118,9 @@ export function Dashboard() {
 
     return () => {
       clearInterval(interval);
-      // Clean up event listener
+      // Clean up event listeners
       unlistenPromise.then((unlisten) => unlisten());
+      unlistenFocusPromise.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -127,6 +146,19 @@ export function Dashboard() {
       setIsTracking(status);
     } catch (error) {
       console.error("Failed to load tracking status:", error);
+    }
+  };
+
+  const loadFocusModeStatus = async () => {
+    try {
+      const [enabled, categories] = await Promise.all([
+        invoke<boolean>("get_focus_mode_status"),
+        invoke<string[]>("get_focus_mode_categories"),
+      ]);
+      setFocusModeEnabled(enabled);
+      setFocusModeCategories(categories);
+    } catch (error) {
+      console.error("Failed to load focus mode status:", error);
     }
   };
 
@@ -277,6 +309,25 @@ export function Dashboard() {
                 <Play className="h-6 w-6 text-red-500" />
               )}
             </div>
+
+            {/* Focus Mode Status */}
+            {focusModeEnabled && (
+              <div className="flex items-center space-x-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <div>
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    Focus Mode Active
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    {focusModeCategories.length > 0
+                      ? `Allowing ${focusModeCategories.length} category${
+                          focusModeCategories.length === 1 ? "" : "ies"
+                        }`
+                      : "Blocking all apps"}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Control Buttons */}
             <div className="flex gap-2">
