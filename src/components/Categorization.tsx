@@ -416,8 +416,6 @@ function Categorization() {
                       appMapping?.apps && appMapping.apps.length > 0;
                     const hasUrls =
                       urlMapping?.urls && urlMapping.urls.length > 0;
-                    const appCount = appMapping?.apps?.length || 0;
-                    const urlCount = urlMapping?.urls?.length || 0;
                     const isSelected = selectedCategory?.id === category.id;
 
                     return (
@@ -445,9 +443,6 @@ function Categorization() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span>{appCount} apps</span>
-                            <span>•</span>
-                            <span>{urlCount} urls</span>
                             {(hasApps || hasUrls) && (
                               <div className="w-2 h-2 bg-green-500 rounded-full" />
                             )}
