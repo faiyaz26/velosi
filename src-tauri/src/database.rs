@@ -772,6 +772,25 @@ impl Database {
         Ok(rows.into_iter().map(|row| row.get("app_pattern")).collect())
     }
 
+    /// Get allowed apps with their expiry times (for caching)
+    pub async fn get_focus_mode_allowed_apps_with_expiry(&self) -> Result<Vec<(String, Option<i64>)>, sqlx::Error> {
+        let now = chrono::Utc::now().timestamp();
+        let rows = sqlx::query(
+            "SELECT app_pattern, expires_at FROM focus_mode_allowed_apps 
+             WHERE expires_at IS NULL OR expires_at > ?
+             ORDER BY app_pattern",
+        )
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|row| {
+            let app_pattern: String = row.get("app_pattern");
+            let expires_at: Option<i64> = row.get("expires_at");
+            (app_pattern, expires_at)
+        }).collect())
+    }
+
     /// Check if an app is allowed (either permanently or temporarily)
     pub async fn is_focus_mode_app_allowed(&self, app_pattern: &str) -> Result<bool, sqlx::Error> {
         let now = chrono::Utc::now().timestamp();

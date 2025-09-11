@@ -10,52 +10,17 @@ interface BlockedAppInfo {
 export const FocusOverlay: React.FC = () => {
   const [blockedApp, setBlockedApp] = useState<BlockedAppInfo | null>(null);
   const [countdown, setCountdown] = useState(8);
-  const [screenDimensions, setScreenDimensions] = useState({
-    width: 0,
-    height: 0,
-  });
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
 
   useEffect(() => {
-    // Calculate screen dimensions
-    const updateDimensions = () => {
-      setScreenDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    // Set initial dimensions
-    updateDimensions();
-
-    // Listen for window resize
-    window.addEventListener("resize", updateDimensions);
-
-    // Ensure the entire page structure is set for full-screen display
-    document.documentElement.style.height = "100%";
-    document.body.style.height = "100%";
-    document.body.style.margin = "0";
-    document.body.style.padding = "0";
-    document.body.style.overflow = "hidden";
-
-    const root = document.getElementById("root");
-    if (root) {
-      root.style.height = "100%";
+    // Get theme from localStorage
+    const storedTheme = localStorage.getItem("theme");
+    if (storedTheme === "light" || storedTheme === "dark") {
+      setTheme(storedTheme);
+    } else {
+      // Default to dark if not set
+      setTheme("dark");
     }
-
-    // Apply box-sizing to all elements for predictable layout
-    const style = document.createElement("style");
-    style.textContent = `* { box-sizing: border-box; }`;
-    document.head.appendChild(style);
-
-    // Cleanup on unmount
-    return () => {
-      window.removeEventListener("resize", updateDimensions);
-      document.body.style.overflow = "";
-      if (root) {
-        root.style.height = "";
-      }
-      document.head.removeChild(style);
-    };
   }, []);
   useEffect(() => {
     // Get the blocked app info from the URL or window data
@@ -128,23 +93,73 @@ export const FocusOverlay: React.FC = () => {
     }
   };
 
-  const handleAllowApp = async () => {
+  const handleAllowApp = async (durationMinutes?: number) => {
+    console.log("🚀 handleAllowApp function called!");
+    console.log("📋 Function parameters:", { durationMinutes });
+    console.log("📱 Blocked app info:", blockedApp);
+    console.log(
+      "Allow app button clicked for:",
+      blockedApp?.app_name,
+      "duration:",
+      durationMinutes
+    );
     try {
       if (blockedApp) {
-        await invoke("temporarily_allow_app", {
+        console.log(
+          "Invoking allow_app with:",
+          blockedApp.app_name,
+          "for",
+          durationMinutes ? `${durationMinutes} minutes` : "indefinitely"
+        );
+        console.log("📞 About to call invoke('allow_app', ...)");
+        console.log("📦 Invoke parameters:", {
           app_name: blockedApp.app_name,
+          duration_minutes: durationMinutes || null,
         });
+
+        const result = await invoke("allow_app", {
+          appName: blockedApp.app_name,
+          durationMinutes: durationMinutes || null, // null for indefinite
+        });
+
+        console.log("✅ invoke('allow_app') completed successfully");
+        console.log("allow_app result:", result);
+
+        // Also try to get the current allowed apps to verify
+        try {
+          const allowedApps = await invoke("get_focus_mode_allowed_apps");
+          console.log("Current allowed apps after allowing:", allowedApps);
+        } catch (allowedError) {
+          console.error("Failed to get allowed apps:", allowedError);
+        }
+
+        console.log("Successfully allowed app, now hiding overlay");
       }
-      await invoke("hide_focus_overlay");
+      const hideResult = await invoke("hide_focus_overlay");
+      console.log("hide_focus_overlay result:", hideResult);
+      console.log("Overlay hidden");
     } catch (error) {
-      console.error("Failed to allow app:", error);
+      console.error("Failed to allow app - detailed error:", error);
+      console.error("Error type:", typeof error);
+      if (error && typeof error === "object") {
+        console.error("Error keys:", Object.keys(error));
+        console.error("Error as string:", String(error));
+      }
     }
   };
 
   if (!blockedApp) {
     return (
-      <div className="fixed inset-0 w-full h-full bg-red-500 flex items-center justify-center">
-        <div className="text-white text-xl">
+      <div
+        className={`fixed inset-0 w-full h-full ${
+          theme === "dark" ? "bg-slate-900" : "bg-blue-100"
+        } flex items-center justify-center`}
+      >
+        <div
+          className={`text-xl ${
+            theme === "dark" ? "text-white" : "text-gray-800"
+          }`}
+        >
           <p>Loading overlay...</p>
           <p className="text-sm mt-2">URL: {window.location.href}</p>
           <p className="text-sm">Search: {window.location.search}</p>
@@ -161,7 +176,7 @@ export const FocusOverlay: React.FC = () => {
         left: "0",
         width: "100%",
         height: "100%",
-        backgroundColor: "#1e3a8a",
+        backgroundColor: theme === "dark" ? "#0f172a" : "#dbeafe",
         margin: "0",
         padding: "0",
         zIndex: "9999",
@@ -174,8 +189,11 @@ export const FocusOverlay: React.FC = () => {
         style={{
           position: "absolute",
           top: "5vh",
-          left: "17vw",
-          backgroundColor: "rgba(255, 255, 255, 0.1)",
+          left: "33vw",
+          backgroundColor:
+            theme === "dark"
+              ? "rgba(0, 0, 0, 0.2)"
+              : "rgba(255, 255, 255, 0.8)",
           backdropFilter: "blur(10px)",
           borderRadius: "24px",
           padding: "48px",
@@ -183,7 +201,10 @@ export const FocusOverlay: React.FC = () => {
           border: "1px solid rgba(255, 255, 255, 0.2)",
           width: "600px",
           height: "500px",
+          pointerEvents: "auto",
+          zIndex: 999,
         }}
+        onClick={() => console.log("Container clicked")}
       >
         {/* App Icon/Header */}
         <div style={{ marginBottom: "2rem" }}>
@@ -217,7 +238,7 @@ export const FocusOverlay: React.FC = () => {
             style={{
               fontSize: "2.25rem",
               fontWeight: "bold",
-              color: "white",
+              color: theme === "dark" ? "white" : "#1f2937",
               marginBottom: "0.5rem",
               margin: "0 0 0.5rem 0",
             }}
@@ -226,7 +247,7 @@ export const FocusOverlay: React.FC = () => {
           </h1>
           <p
             style={{
-              color: "#bfdbfe",
+              color: theme === "dark" ? "#bfdbfe" : "#3b82f6",
               fontSize: "1.125rem",
               margin: "0",
             }}
@@ -240,16 +261,23 @@ export const FocusOverlay: React.FC = () => {
           style={{
             marginBottom: "2rem",
             padding: "1.5rem",
-            backgroundColor: "rgba(255, 255, 255, 0.05)",
+            backgroundColor:
+              theme === "dark"
+                ? "rgba(255, 255, 255, 0.05)"
+                : "rgba(0, 0, 0, 0.05)",
             borderRadius: "1rem",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
+            border: `1px solid ${
+              theme === "dark"
+                ? "rgba(255, 255, 255, 0.1)"
+                : "rgba(0, 0, 0, 0.1)"
+            }`,
           }}
         >
           <h2
             style={{
               fontSize: "1.5rem",
               fontWeight: "600",
-              color: "white",
+              color: theme === "dark" ? "white" : "#1f2937",
               marginBottom: "0.5rem",
               margin: "0 0 0.5rem 0",
             }}
@@ -259,7 +287,7 @@ export const FocusOverlay: React.FC = () => {
           </h2>
           <p
             style={{
-              color: "#bfdbfe",
+              color: theme === "dark" ? "#bfdbfe" : "#3b82f6",
               fontSize: "1.125rem",
               marginBottom: "1rem",
               margin: "0 0 1rem 0",
@@ -270,7 +298,7 @@ export const FocusOverlay: React.FC = () => {
           <div
             style={{
               fontSize: "0.875rem",
-              color: "#93c5fd",
+              color: theme === "dark" ? "#93c5fd" : "#2563eb",
               margin: "0",
             }}
           >
@@ -313,7 +341,10 @@ export const FocusOverlay: React.FC = () => {
             }}
           >
             <button
-              onClick={handleAllowApp}
+              onClick={() => {
+                console.log("Allow This App button clicked!");
+                handleAllowApp(30); // Allow for 30 minutes
+              }}
               style={{
                 padding: "0.75rem 1.5rem",
                 backgroundColor: "#2563eb",
@@ -324,13 +355,18 @@ export const FocusOverlay: React.FC = () => {
                 cursor: "pointer",
                 fontSize: "1rem",
                 transition: "background-color 0.2s",
+                zIndex: 1000,
+                position: "relative",
+                pointerEvents: "auto",
               }}
-              onMouseOver={(e) =>
-                ((e.target as HTMLElement).style.backgroundColor = "#1d4ed8")
-              }
-              onMouseOut={(e) =>
-                ((e.target as HTMLElement).style.backgroundColor = "#2563eb")
-              }
+              onMouseOver={(e) => {
+                console.log("Button hover");
+                (e.target as HTMLElement).style.backgroundColor = "#1d4ed8";
+              }}
+              onMouseOut={(e) => {
+                console.log("Button mouse out");
+                (e.target as HTMLElement).style.backgroundColor = "#2563eb";
+              }}
             >
               Allow This App (30 min)
             </button>
@@ -361,7 +397,12 @@ export const FocusOverlay: React.FC = () => {
         </div>
 
         {/* Tips */}
-        <div style={{ color: "#bfdbfe", fontSize: "0.875rem" }}>
+        <div
+          style={{
+            color: theme === "dark" ? "#bfdbfe" : "#3b82f6",
+            fontSize: "0.875rem",
+          }}
+        >
           <p style={{ marginBottom: "0.5rem", margin: "0 0 0.5rem 0" }}>
             💡 <strong>Tips:</strong>
           </p>
@@ -392,12 +433,16 @@ export const FocusOverlay: React.FC = () => {
           style={{
             marginTop: "2rem",
             paddingTop: "1.5rem",
-            borderTop: "1px solid rgba(255, 255, 255, 0.2)",
+            borderTop: `1px solid ${
+              theme === "dark"
+                ? "rgba(255, 255, 255, 0.2)"
+                : "rgba(0, 0, 0, 0.2)"
+            }`,
           }}
         >
           <p
             style={{
-              color: "#93c5fd",
+              color: theme === "dark" ? "#93c5fd" : "#2563eb",
               fontSize: "0.875rem",
               margin: "0",
             }}

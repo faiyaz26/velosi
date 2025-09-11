@@ -1,13 +1,18 @@
-use crate::AppState;
+use crate::{cache::CacheManager, AppState};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub struct FocusMode {
     app_handle: AppHandle,
+    cache_manager: CacheManager,
 }
 
 impl FocusMode {
     pub fn new(app_handle: AppHandle) -> Self {
-        Self { app_handle }
+        let cache_manager = CacheManager::new(app_handle.clone());
+        Self {
+            app_handle,
+            cache_manager,
+        }
     }
 
     pub async fn check_and_block_app(
@@ -17,12 +22,11 @@ impl FocusMode {
     ) -> Result<bool, String> {
         let state: tauri::State<AppState> = self.app_handle.state();
 
-        // Check if focus mode is enabled (check database as source of truth)
-        let focus_enabled = state
-            .db
-            .get_focus_mode_enabled()
-            .await
-            .map_err(|e| e.to_string())?;
+        // Check if focus mode is enabled (use cache)
+        let focus_enabled = {
+            let focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+            *focus_enabled
+        };
 
         if !focus_enabled {
             return Ok(true); // App is allowed
@@ -35,29 +39,27 @@ impl FocusMode {
             return Ok(true); // Velosi app is always allowed
         }
 
-        // Check if app is temporarily allowed (check database first)
-        let is_db_allowed = state
-            .db
-            .is_focus_mode_app_allowed(app_name)
-            .await
-            .map_err(|e| e.to_string())?;
+        // Check if app is temporarily allowed (use cache first)
+        let is_allowed = self.cache_manager.is_app_allowed_cached(app_name).await?;
 
         println!(
-            "🔍 Focus mode check for '{}': DB allowed = {}",
-            app_name, is_db_allowed
+            "🔍 Focus mode check for '{}': Cached allowed = {}",
+            app_name, is_allowed
         );
 
-        if is_db_allowed || self.is_app_temporarily_allowed(app_name).await? {
-            println!("✅ App '{}' is allowed (DB or temporary)", app_name);
-            return Ok(true); // App is temporarily allowed
+        if is_allowed {
+            println!("✅ App '{}' is allowed (cached)", app_name);
+            return Ok(true); // App is allowed
         }
 
-        // Get allowed categories from database (authoritative source)
-        let allowed_categories = state
-            .db
-            .get_focus_mode_allowed_categories()
-            .await
-            .map_err(|e| e.to_string())?;
+        // Get allowed categories from cache
+        let allowed_categories = {
+            let allowed_categories = state
+                .focus_mode_allowed_categories
+                .lock()
+                .map_err(|e| e.to_string())?;
+            allowed_categories.clone()
+        };
 
         // If no categories are specified, block everything
         if allowed_categories.is_empty() {
@@ -66,12 +68,8 @@ impl FocusMode {
                 .await;
         }
 
-        // Get app mappings to determine category
-        let app_mappings = state
-            .db
-            .get_app_mappings()
-            .await
-            .map_err(|e| e.to_string())?;
+        // Get app mappings from cache
+        let app_mappings = self.cache_manager.get_app_mappings_cached().await?;
 
         // Find the category for this app
         for mapping in app_mappings {
@@ -271,31 +269,8 @@ Would you like to:" buttons {{"Stay Focused", "Disable Focus Mode", "Allow This 
         Ok(())
     }
 
-    async fn is_app_temporarily_allowed(&self, app_name: &str) -> Result<bool, String> {
-        let state: tauri::State<crate::AppState> = self.app_handle.state();
-        let now = tokio::time::Instant::now();
-
-        let mut allowed_apps = state
-            .temporarily_allowed_apps
-            .lock()
-            .map_err(|e| e.to_string())?;
-
-        if let Some(&allowed_time) = allowed_apps.get(app_name) {
-            // Check if the temporary allowance has expired (30 minutes)
-            if now.duration_since(allowed_time).as_secs() < 30 * 60 {
-                return Ok(true);
-            } else {
-                // Remove expired entry
-                allowed_apps.remove(app_name);
-            }
-        }
-
-        Ok(false)
-    }
-
     async fn temporarily_allow_app(&self, app_name: &str) -> Result<(), String> {
         let state: tauri::State<crate::AppState> = self.app_handle.state();
-        let now = tokio::time::Instant::now();
 
         // Persist to database (expires in 30 minutes)
         let expires_at = chrono::Utc::now().timestamp() + (30 * 60); // 30 minutes from now
@@ -305,12 +280,14 @@ Would you like to:" buttons {{"Stay Focused", "Disable Focus Mode", "Allow This 
             .await
             .map_err(|e| e.to_string())?;
 
-        // Update in-memory state for compatibility
-        let mut allowed_apps = state
-            .temporarily_allowed_apps
-            .lock()
-            .map_err(|e| e.to_string())?;
-        allowed_apps.insert(app_name.to_string(), now);
+        // Update cache immediately
+        {
+            let mut cache = state
+                .focus_mode_allowed_apps_cache
+                .lock()
+                .map_err(|e| e.to_string())?;
+            cache.insert(app_name.to_string(), Some(expires_at));
+        }
 
         // Emit event to frontend to refresh allowed apps list
         self.app_handle
@@ -323,7 +300,10 @@ Would you like to:" buttons {{"Stay Focused", "Disable Focus Mode", "Allow This 
             )
             .map_err(|e| e.to_string())?;
 
-        println!("✅ Temporarily allowed {} for 30 minutes", app_name);
+        println!(
+            "✅ Temporarily allowed {} for 30 minutes (cached)",
+            app_name
+        );
         Ok(())
     }
 

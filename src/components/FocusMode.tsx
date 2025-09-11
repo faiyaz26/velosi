@@ -11,6 +11,8 @@ import {
   Clock,
   AlertCircle,
   CheckCircle2,
+  RefreshCw,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +29,13 @@ interface BlockedApp {
   timestamp: string;
 }
 
+interface AllowedAppInfo {
+  app_name: string;
+  expires_at: number | null;
+  is_indefinite: boolean;
+  expires_in_minutes: number | null;
+}
+
 export function FocusMode() {
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const [allowedCategories, setAllowedCategories] = useState<string[]>([]);
@@ -34,8 +43,9 @@ export function FocusMode() {
     []
   );
   const [blockedApps, setBlockedApps] = useState<BlockedApp[]>([]);
-  const [allowedApps, setAllowedApps] = useState<string[]>([]);
+  const [allowedApps, setAllowedApps] = useState<AllowedAppInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshingApps, setRefreshingApps] = useState(false);
 
   useEffect(() => {
     loadFocusModeStatus();
@@ -89,7 +99,9 @@ export function FocusMode() {
 
   const loadAllowedApps = async () => {
     try {
-      const apps = await invoke<string[]>("get_focus_mode_allowed_apps");
+      const apps = await invoke<AllowedAppInfo[]>(
+        "get_focus_mode_allowed_apps_detailed"
+      );
       setAllowedApps(apps);
     } catch (error) {
       console.error("Failed to load allowed apps:", error);
@@ -269,34 +281,55 @@ export function FocusMode() {
       </Card>
 
       {/* Manually Allowed Apps */}
-      {allowedApps.length > 0 && (
-        <Card className="p-6">
-          <div className="flex items-center space-x-2 mb-4">
-            <ShieldCheck className="h-5 w-5 text-green-500" />
-            <h3 className="font-semibold text-foreground">
-              Manually Allowed Apps
-            </h3>
-          </div>
+      <Card className="p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <ShieldCheck className="h-5 w-5 text-green-500" />
+          <h3 className="font-semibold text-foreground">
+            Manually Allowed Apps
+          </h3>
+        </div>
 
-          <p className="text-sm text-muted-foreground mb-4">
-            These apps are temporarily allowed and will bypass focus mode
-            restrictions.
-          </p>
+        <p className="text-sm text-muted-foreground mb-4">
+          These apps are temporarily allowed and will bypass focus mode
+          restrictions.
+        </p>
 
+        {allowedApps.length > 0 ? (
           <div className="space-y-2">
-            {allowedApps.map((appName, index) => (
+            {allowedApps.map((appInfo, index) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg"
               >
                 <div className="flex items-center space-x-3">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span className="font-medium text-foreground">{appName}</span>
+                  <div>
+                    <span className="font-medium text-foreground">
+                      {appInfo.app_name}
+                    </span>
+                    <div className="text-xs text-muted-foreground">
+                      {appInfo.is_indefinite ? (
+                        <span className="text-blue-600 font-medium">
+                          Allowed indefinitely
+                        </span>
+                      ) : appInfo.expires_in_minutes !== null ? (
+                        appInfo.expires_in_minutes > 0 ? (
+                          <span className="text-orange-600">
+                            Expires in {appInfo.expires_in_minutes} minutes
+                          </span>
+                        ) : (
+                          <span className="text-red-600 font-medium">
+                            Expired
+                          </span>
+                        )
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => removeAllowedApp(appName)}
+                  onClick={() => removeAllowedApp(appInfo.app_name)}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
                   Remove
@@ -304,8 +337,24 @@ export function FocusMode() {
               </div>
             ))}
           </div>
-        </Card>
-      )}
+        ) : (
+          <div className="flex items-center justify-center p-8 text-center">
+            <div>
+              <div className="flex justify-center mb-3">
+                <ShieldCheck className="h-12 w-12 text-muted-foreground/40" />
+              </div>
+              <h4 className="font-medium text-foreground mb-2">
+                No manually allowed apps
+              </h4>
+              <p className="text-sm text-muted-foreground max-w-md">
+                When an app is blocked by focus mode, you can temporarily allow
+                it from the blocking overlay. Those apps will appear here with
+                their expiration times.
+              </p>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {/* Recent Blocked Apps */}
       {focusModeEnabled && blockedApps.length > 0 && (

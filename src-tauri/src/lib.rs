@@ -1,4 +1,5 @@
 mod activity;
+mod cache;
 mod commands;
 mod database;
 mod focus_mode;
@@ -27,9 +28,12 @@ pub struct AppState {
     focus_mode_enabled: Arc<Mutex<bool>>,
     focus_mode_allowed_categories: Arc<Mutex<Vec<String>>>,
     recently_blocked_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
-    temporarily_allowed_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
     // App category cache for faster lookups (app_name -> category_id)
     app_category_cache: Arc<Mutex<std::collections::HashMap<String, String>>>,
+    // Cache for allowed apps (app_name -> expires_at timestamp, None = indefinite)
+    focus_mode_allowed_apps_cache: Arc<Mutex<std::collections::HashMap<String, Option<i64>>>>,
+    // Cache for app mappings to avoid repeated DB queries
+    app_mappings_cache: Arc<Mutex<Option<Vec<crate::models::AppMapping>>>>,
     // Recently hidden apps to avoid tracking them immediately after hiding
     recently_hidden_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
 }
@@ -87,6 +91,13 @@ pub fn run() {
                 .block_on(db_arc.get_focus_mode_allowed_categories())
                 .unwrap_or_default();
 
+            // Load allowed apps cache from database
+            let allowed_apps_vec = rt
+                .block_on(db_arc.get_focus_mode_allowed_apps_with_expiry())
+                .unwrap_or_default();
+            let allowed_apps: std::collections::HashMap<String, Option<i64>> =
+                allowed_apps_vec.into_iter().collect();
+
             // Initialize application state
             let state = AppState {
                 db: db_arc,
@@ -98,7 +109,9 @@ pub fn run() {
                 focus_mode_enabled: Arc::new(Mutex::new(focus_enabled)),
                 focus_mode_allowed_categories: Arc::new(Mutex::new(allowed_categories)),
                 recently_blocked_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
-                temporarily_allowed_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                // Cache structures (initialized from database)
+                focus_mode_allowed_apps_cache: Arc::new(Mutex::new(allowed_apps)),
+                app_mappings_cache: Arc::new(Mutex::new(None)),
                 app_category_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
                 recently_hidden_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
             };
@@ -122,6 +135,11 @@ pub fn run() {
                     }
                 });
             }
+
+            // Setup focus mode cache listeners synchronously
+            println!("🚀 Setting up focus mode cache listeners...");
+            cache::setup_cache_listeners_sync(app_handle.clone());
+            println!("✅ Focus mode cache listeners setup!");
 
             // Start background tracking outside the blocking context
             println!("🚀 About to spawn activity tracking task...");
@@ -179,8 +197,9 @@ pub fn run() {
             commands::set_focus_mode_categories,
             commands::get_focus_mode_categories,
             commands::check_app_focus_allowed,
-            commands::temporarily_allow_app,
+            commands::allow_app,
             commands::get_focus_mode_allowed_apps,
+            commands::get_focus_mode_allowed_apps_detailed,
             commands::remove_focus_mode_allowed_app,
             commands::show_focus_overlay,
             commands::hide_focus_overlay

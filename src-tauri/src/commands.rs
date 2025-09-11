@@ -687,6 +687,17 @@ pub async fn enable_focus_mode(
         .emit("focus-mode-changed", true)
         .map_err(|e| e.to_string())?;
 
+    // Emit cache invalidation event
+    app_handle
+        .emit(
+            "focus-cache-invalidate",
+            serde_json::json!({
+                "type": "focus_mode_enabled_changed",
+                "enabled": true
+            }),
+        )
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -713,6 +724,17 @@ pub async fn disable_focus_mode(
         .emit("focus-mode-changed", false)
         .map_err(|e| e.to_string())?;
 
+    // Emit cache invalidation event
+    app_handle
+        .emit(
+            "focus-cache-invalidate",
+            serde_json::json!({
+                "type": "focus_mode_enabled_changed",
+                "enabled": false
+            }),
+        )
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -729,6 +751,7 @@ pub async fn get_focus_mode_status(state: State<'_, AppState>) -> Result<bool, S
 #[tauri::command]
 pub async fn set_focus_mode_categories(
     state: State<'_, AppState>,
+    app_handle: AppHandle,
     categories: Vec<String>,
 ) -> Result<(), String> {
     // Persist to database
@@ -738,12 +761,17 @@ pub async fn set_focus_mode_categories(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Update in-memory state
-    let mut allowed_categories = state
-        .focus_mode_allowed_categories
-        .lock()
+    // Emit cache invalidation event instead of updating cache directly
+    app_handle
+        .emit(
+            "focus-cache-invalidate",
+            serde_json::json!({
+                "type": "allowed_categories_changed",
+                "categories": categories
+            }),
+        )
         .map_err(|e| e.to_string())?;
-    *allowed_categories = categories;
+
     Ok(())
 }
 
@@ -782,23 +810,15 @@ pub async fn check_app_focus_allowed(
         return Ok(true); // Velosi app is always allowed
     }
 
-    // Check if app is temporarily allowed
-    {
-        let now = tokio::time::Instant::now();
-        let mut allowed_apps = state
-            .temporarily_allowed_apps
-            .lock()
-            .map_err(|e| e.to_string())?;
+    // Check if app is allowed in database
+    let is_allowed = state
+        .db
+        .is_focus_mode_app_allowed(&app_name)
+        .await
+        .map_err(|e| e.to_string())?;
 
-        if let Some(&allowed_time) = allowed_apps.get(&app_name) {
-            // Check if the temporary allowance has expired (30 minutes)
-            if now.duration_since(allowed_time).as_secs() < 30 * 60 {
-                return Ok(true);
-            } else {
-                // Remove expired entry
-                allowed_apps.remove(&app_name);
-            }
-        }
+    if is_allowed {
+        return Ok(true);
     }
 
     let allowed_categories = {
@@ -843,28 +863,89 @@ pub async fn check_app_focus_allowed(
 }
 
 #[tauri::command]
-pub async fn temporarily_allow_app(
+pub async fn allow_app(
     state: State<'_, AppState>,
+    app_handle: AppHandle,
     app_name: String,
+    duration_minutes: Option<u32>,
 ) -> Result<(), String> {
-    let now = tokio::time::Instant::now();
+    println!(
+        "🔄 allow_app called for: '{}' with duration: {:?} minutes",
+        app_name, duration_minutes
+    );
 
-    // Persist to database (expires in 30 minutes)
-    let expires_at = chrono::Utc::now().timestamp() + (30 * 60); // 30 minutes from now
+    let expires_at = if let Some(duration) = duration_minutes {
+        Some(chrono::Utc::now().timestamp() + (duration as i64 * 60))
+    } else {
+        None // Allow indefinitely
+    };
+
+    println!("📅 Expires at timestamp: {:?}", expires_at);
+
+    // Store in database
+    println!("💾 Adding to database...");
     state
         .db
-        .add_focus_mode_allowed_app(&app_name, Some(expires_at))
+        .add_focus_mode_allowed_app(&app_name, expires_at)
+        .await
+        .map_err(|e| {
+            println!("❌ Database error: {}", e);
+            e.to_string()
+        })?;
+
+    println!("✅ Successfully added to database");
+
+    // Verify it was added by checking the database
+    let is_allowed = state
+        .db
+        .is_focus_mode_app_allowed(&app_name)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Update in-memory state
-    let mut allowed_apps = state
-        .temporarily_allowed_apps
-        .lock()
-        .map_err(|e| e.to_string())?;
-    allowed_apps.insert(app_name.clone(), now);
+    println!(
+        "🔍 Verification: App '{}' is_allowed = {}",
+        app_name, is_allowed
+    );
 
-    println!("✅ Temporarily allowed app: {} for 30 minutes", app_name);
+    // Emit event to notify frontend to refresh allowed apps list
+    println!("📡 Emitting app-temporarily-allowed event...");
+    app_handle
+        .emit(
+            "app-temporarily-allowed",
+            serde_json::json!({
+                "app_name": app_name,
+                "expires_at": expires_at
+            }),
+        )
+        .map_err(|e| {
+            println!("❌ Event emission error: {}", e);
+            e.to_string()
+        })?;
+
+    // Also emit cache invalidation event for backend cache system
+    println!("📡 Emitting focus-cache-invalidate event...");
+    app_handle
+        .emit(
+            "focus-cache-invalidate",
+            serde_json::json!({
+                "type": "allowed_apps_changed",
+                "app_name": app_name,
+                "expires_at": expires_at
+            }),
+        )
+        .map_err(|e| {
+            println!("❌ Cache invalidation event emission error: {}", e);
+            e.to_string()
+        })?;
+
+    println!("📡 Both events emitted successfully");
+
+    if let Some(duration) = duration_minutes {
+        println!("✅ Allowed app: {} for {} minutes", app_name, duration);
+    } else {
+        println!("✅ Allowed app: {} indefinitely", app_name);
+    }
+
     Ok(())
 }
 
@@ -872,17 +953,77 @@ pub async fn temporarily_allow_app(
 pub async fn get_focus_mode_allowed_apps(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
+    println!("🔍 get_focus_mode_allowed_apps called");
+
     // Get from database (authoritative source)
-    state
+    let apps = state
         .db
         .get_focus_mode_allowed_apps()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    println!("📝 Current allowed apps from DB: {:?}", apps);
+
+    // Also check cache
+    let cache = state
+        .focus_mode_allowed_apps_cache
+        .lock()
+        .map_err(|e| e.to_string())?;
+    println!("💾 Current allowed apps cache: {:?}", *cache);
+
+    Ok(apps)
+}
+
+#[derive(serde::Serialize)]
+pub struct AllowedAppInfo {
+    pub app_name: String,
+    pub expires_at: Option<i64>,
+    pub is_indefinite: bool,
+    pub expires_in_minutes: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn get_focus_mode_allowed_apps_detailed(
+    state: State<'_, AppState>,
+) -> Result<Vec<AllowedAppInfo>, String> {
+    println!("🔍 get_focus_mode_allowed_apps_detailed called");
+
+    // Get from database with expiry info
+    let apps_with_expiry = state
+        .db
+        .get_focus_mode_allowed_apps_with_expiry()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().timestamp();
+
+    let detailed_apps: Vec<AllowedAppInfo> = apps_with_expiry
+        .into_iter()
+        .map(|(app_name, expires_at)| {
+            let is_indefinite = expires_at.is_none();
+            let expires_in_minutes = expires_at.map(|exp| {
+                let remaining_seconds = exp - now;
+                remaining_seconds / 60 // Convert to minutes
+            });
+
+            AllowedAppInfo {
+                app_name,
+                expires_at,
+                is_indefinite,
+                expires_in_minutes,
+            }
+        })
+        .collect();
+
+    println!("📝 Detailed allowed apps: {:?}", detailed_apps.len());
+
+    Ok(detailed_apps)
 }
 
 #[tauri::command]
 pub async fn remove_focus_mode_allowed_app(
     state: State<'_, AppState>,
+    app_handle: AppHandle,
     app_name: String,
 ) -> Result<(), String> {
     // Remove from database
@@ -892,12 +1033,17 @@ pub async fn remove_focus_mode_allowed_app(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Also remove from in-memory state
-    let mut allowed_apps = state
-        .temporarily_allowed_apps
-        .lock()
+    // Emit cache invalidation event instead of updating cache directly
+    app_handle
+        .emit(
+            "focus-cache-invalidate",
+            serde_json::json!({
+                "type": "allowed_apps_changed",
+                "app_name": app_name,
+                "removed": true
+            }),
+        )
         .map_err(|e| e.to_string())?;
-    allowed_apps.remove(&app_name);
 
     println!("✅ Removed allowed app: {}", app_name);
     Ok(())
@@ -930,33 +1076,13 @@ pub async fn show_focus_overlay(
         println!("Creating new overlay window");
         use tauri::WebviewWindowBuilder;
 
-        // Get primary monitor size with fallback
-        let (screen_width, screen_height) = match app_handle.primary_monitor() {
-            Ok(Some(monitor)) => {
-                let screen_size = monitor.size();
-                let width = screen_size.width as f64;
-                let height = screen_size.height as f64;
-                println!("Screen size detected: {}x{}", width, height);
-                (width, height)
-            }
-            Ok(None) => {
-                println!("No primary monitor found, using fallback size");
-                (1920.0, 1080.0)
-            }
-            Err(e) => {
-                println!("Error getting monitor info: {}, using fallback size", e);
-                (1920.0, 1080.0)
-            }
-        };
-
         let window_result = WebviewWindowBuilder::new(
             &app_handle,
             "focus-overlay",
             tauri::WebviewUrl::App(url.into()),
         )
         .title("Focus Mode - App Blocked")
-        .inner_size(screen_width, screen_height)
-        .position(0.0, 0.0) // Position at top-left of screen
+        .fullscreen(true) // Use fullscreen instead of manual sizing
         .always_on_top(true)
         .skip_taskbar(true)
         .closable(false)
@@ -965,7 +1091,8 @@ pub async fn show_focus_overlay(
         .resizable(false)
         .decorations(false)
         .visible(false) // Start hidden to prevent flickering
-        .focused(false) // Don't auto-focus during creation
+        .focused(true) // Focus during creation for better input handling
+        .transparent(true) // Make window transparent for overlay effect
         .build();
 
         match window_result {
@@ -975,6 +1102,9 @@ pub async fn show_focus_overlay(
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                 // Show and focus only after everything is configured
                 window.show().map_err(|e| e.to_string())?;
+                window.set_focus().map_err(|e| e.to_string())?;
+                // Additional delay and re-focus to ensure proper focus
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 window.set_focus().map_err(|e| e.to_string())?;
             }
             Err(e) => {

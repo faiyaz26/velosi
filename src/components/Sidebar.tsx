@@ -26,6 +26,11 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       icon: LayoutDashboard,
     },
     {
+      id: "focus-mode",
+      label: "Focus Mode",
+      icon: Focus,
+    },
+    {
       id: "activity-log",
       label: "Activity Log",
       icon: Activity,
@@ -34,11 +39,6 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       id: "categorization",
       label: "Categorization",
       icon: Tag,
-    },
-    {
-      id: "focus-mode",
-      label: "Focus Mode",
-      icon: Focus,
     },
     {
       id: "settings",
