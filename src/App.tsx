@@ -5,6 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { ActivityLog } from "@/components/ActivityLog";
 import Categorization from "@/components/Categorization";
 import { FocusMode } from "@/components/FocusMode";
+import { FocusOverlay } from "@/components/FocusOverlay";
 import { Settings } from "@/components/Settings";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -14,10 +15,18 @@ import { categoryService } from "@/lib/categoryService";
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
 
+  // Check if this is the focus overlay window
+  const isOverlayWindow = window.location.pathname === "/focus-overlay";
+
   // Initialize category service on app start
   useEffect(() => {
     categoryService.initialize().catch(console.error);
   }, []);
+
+  // If this is the overlay window, render only the overlay
+  if (isOverlayWindow) {
+    return <FocusOverlay />;
+  }
 
   const handleMinimize = async () => {
     try {

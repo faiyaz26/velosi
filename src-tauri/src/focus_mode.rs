@@ -42,7 +42,13 @@ impl FocusMode {
             .await
             .map_err(|e| e.to_string())?;
 
+        println!(
+            "🔍 Focus mode check for '{}': DB allowed = {}",
+            app_name, is_db_allowed
+        );
+
         if is_db_allowed || self.is_app_temporarily_allowed(app_name).await? {
+            println!("✅ App '{}' is allowed (DB or temporary)", app_name);
             return Ok(true); // App is temporarily allowed
         }
 
@@ -141,15 +147,13 @@ impl FocusMode {
             blocked_apps.insert(app_name.to_string(), now);
         }
 
-        // Start hiding the app and showing notification asynchronously (don't wait)
+        // Show notification and popup without hiding the app
         let app_name_clone = app_name.to_string();
         let reason_clone = reason.to_string();
         let focus_mode_clone = FocusMode::new(self.app_handle.clone());
 
         tokio::spawn(async move {
-            // Hide the app immediately when blocked
-            let _ = focus_mode_clone.hide_blocked_app(&app_name_clone).await;
-            // Show notification and popup
+            // Just show notification - don't hide the app to avoid permission requests
             let _ = focus_mode_clone
                 .show_block_notification(&app_name_clone, &reason_clone)
                 .await;
@@ -171,17 +175,13 @@ impl FocusMode {
             )
             .map_err(|e| e.to_string())?;
 
-        // Show blocking popup dialog
-        #[cfg(target_os = "macos")]
-        {
-            self.show_blocking_popup(app_name, reason).await?;
-        }
-
-        // Also show a notification
-        #[cfg(target_os = "macos")]
-        {
-            self.show_macos_notification(app_name, reason).await?;
-        }
+        // Show the overlay window instead of AppleScript popup
+        crate::commands::show_focus_overlay(
+            self.app_handle.clone(),
+            app_name.to_string(),
+            reason.to_string(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -235,11 +235,6 @@ Would you like to:" buttons {{"Stay Focused", "Disable Focus Mode", "Allow This 
                             if let Err(e) = self.temporarily_allow_app(app_name).await {
                                 println!("⚠️ Failed to temporarily allow app: {}", e);
                             } else {
-                                // Show the app since it's now allowed
-                                if let Err(e) = self.show_blocked_app(app_name).await {
-                                    println!("⚠️ Failed to show allowed app: {}", e);
-                                }
-
                                 // Show a notification that the app is now allowed
                                 #[cfg(target_os = "macos")]
                                 {
@@ -256,17 +251,9 @@ Would you like to:" buttons {{"Stay Focused", "Disable Focus Mode", "Allow This 
                         }
                         "timeout" => {
                             println!("⏰ Dialog timed out - staying in focus mode");
-                            // Hide the app since user didn't respond
-                            if let Err(e) = self.hide_blocked_app(app_name).await {
-                                eprintln!("Failed to hide blocked app after timeout: {}", e);
-                            }
                         }
                         _ => {
                             println!("👍 User chose to stay focused");
-                            // Hide the app since user wants to stay focused
-                            if let Err(e) = self.hide_blocked_app(app_name).await {
-                                eprintln!("Failed to hide blocked app: {}", e);
-                            }
                         }
                     }
                 } else {

@@ -690,24 +690,31 @@ impl Database {
     /// Set focus mode enabled status
     pub async fn set_focus_mode_enabled(&self, enabled: bool) -> Result<(), sqlx::Error> {
         let value = if enabled { "1" } else { "0" };
-        sqlx::query("INSERT OR REPLACE INTO focus_mode_settings (key, value) VALUES ('enabled', ?)")
-            .bind(value)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "INSERT OR REPLACE INTO focus_mode_settings (key, value) VALUES ('enabled', ?)",
+        )
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     /// Get allowed category IDs for focus mode
     pub async fn get_focus_mode_allowed_categories(&self) -> Result<Vec<String>, sqlx::Error> {
-        let rows = sqlx::query("SELECT category_id FROM focus_mode_allowed_categories ORDER BY category_id")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(
+            "SELECT category_id FROM focus_mode_allowed_categories ORDER BY category_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(rows.into_iter().map(|row| row.get("category_id")).collect())
     }
 
     /// Set allowed category IDs for focus mode (replaces existing)
-    pub async fn set_focus_mode_allowed_categories(&self, category_ids: &[String]) -> Result<(), sqlx::Error> {
+    pub async fn set_focus_mode_allowed_categories(
+        &self,
+        category_ids: &[String],
+    ) -> Result<(), sqlx::Error> {
         // Clear existing categories
         sqlx::query("DELETE FROM focus_mode_allowed_categories")
             .execute(&self.pool)
@@ -725,7 +732,11 @@ impl Database {
     }
 
     /// Add a temporarily allowed app (with expiry)
-    pub async fn add_focus_mode_allowed_app(&self, app_pattern: &str, expires_at: Option<i64>) -> Result<(), sqlx::Error> {
+    pub async fn add_focus_mode_allowed_app(
+        &self,
+        app_pattern: &str,
+        expires_at: Option<i64>,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query("INSERT OR REPLACE INTO focus_mode_allowed_apps (app_pattern, expires_at) VALUES (?, ?)")
             .bind(app_pattern)
             .bind(expires_at)
@@ -735,7 +746,10 @@ impl Database {
     }
 
     /// Remove an allowed app
-    pub async fn remove_focus_mode_allowed_app(&self, app_pattern: &str) -> Result<(), sqlx::Error> {
+    pub async fn remove_focus_mode_allowed_app(
+        &self,
+        app_pattern: &str,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM focus_mode_allowed_apps WHERE app_pattern = ?")
             .bind(app_pattern)
             .execute(&self.pool)
@@ -749,7 +763,7 @@ impl Database {
         let rows = sqlx::query(
             "SELECT app_pattern FROM focus_mode_allowed_apps 
              WHERE expires_at IS NULL OR expires_at > ?
-             ORDER BY app_pattern"
+             ORDER BY app_pattern",
         )
         .bind(now)
         .fetch_all(&self.pool)
@@ -761,12 +775,46 @@ impl Database {
     /// Check if an app is allowed (either permanently or temporarily)
     pub async fn is_focus_mode_app_allowed(&self, app_pattern: &str) -> Result<bool, sqlx::Error> {
         let now = chrono::Utc::now().timestamp();
+
+        // First try exact match
         let row = sqlx::query(
             "SELECT 1 FROM focus_mode_allowed_apps 
              WHERE app_pattern = ? AND (expires_at IS NULL OR expires_at > ?)
-             LIMIT 1"
+             LIMIT 1",
         )
         .bind(app_pattern)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if row.is_some() {
+            return Ok(true);
+        }
+
+        // If no exact match, try pattern matching (case-insensitive)
+        let pattern_like = format!("%{}%", app_pattern.to_lowercase());
+        let row = sqlx::query(
+            "SELECT 1 FROM focus_mode_allowed_apps 
+             WHERE LOWER(app_pattern) LIKE ? AND (expires_at IS NULL OR expires_at > ?)
+             LIMIT 1",
+        )
+        .bind(&pattern_like)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if row.is_some() {
+            return Ok(true);
+        }
+
+        // Also check the reverse - if the stored pattern contains the app name
+        let app_like = format!("%{}%", app_pattern.to_lowercase());
+        let row = sqlx::query(
+            "SELECT 1 FROM focus_mode_allowed_apps 
+             WHERE ? LIKE LOWER(app_pattern) AND (expires_at IS NULL OR expires_at > ?)
+             LIMIT 1",
+        )
+        .bind(&app_like)
         .bind(now)
         .fetch_optional(&self.pool)
         .await?;
@@ -777,10 +825,12 @@ impl Database {
     /// Clean up expired allowed apps
     pub async fn cleanup_expired_focus_mode_apps(&self) -> Result<(), sqlx::Error> {
         let now = chrono::Utc::now().timestamp();
-        sqlx::query("DELETE FROM focus_mode_allowed_apps WHERE expires_at IS NOT NULL AND expires_at <= ?")
-            .bind(now)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "DELETE FROM focus_mode_allowed_apps WHERE expires_at IS NOT NULL AND expires_at <= ?",
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }

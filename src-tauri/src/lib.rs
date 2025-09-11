@@ -181,7 +181,9 @@ pub fn run() {
             commands::check_app_focus_allowed,
             commands::temporarily_allow_app,
             commands::get_focus_mode_allowed_apps,
-            commands::remove_focus_mode_allowed_app
+            commands::remove_focus_mode_allowed_app,
+            commands::show_focus_overlay,
+            commands::hide_focus_overlay
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and overlay windows",
+  "windows": ["main", "focus-overlay"],
   "permissions": [
     "core:default",
     "opener:default",
@@ -11,6 +11,7 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-set-focus",
-    "core:window:allow-is-visible"
+    "core:window:allow-is-visible",
+    "core:window:allow-close"
   ]
 }
