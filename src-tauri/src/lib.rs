@@ -119,7 +119,7 @@ pub fn run() {
             app.manage(state);
 
             // Setup the tray icon and handlers via the tray module
-            tray::TrayManager::create_tray(&app_handle, true, None)?;
+            tray::TrayManager::create_tray(&app_handle, true, None, Some(focus_enabled))?;
 
             // Handle window close event to hide instead of quit
             if let Some(window) = app.get_webview_window("main") {

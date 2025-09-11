@@ -33,11 +33,21 @@ async fn get_pause_info(state: &AppState, is_tracking: bool) -> Option<(u64, boo
     }
 }
 
-// Helper function to update tray menu with pause info
+// Helper function to update tray menu with pause info and focus mode status
 async fn update_tray_with_state(app_handle: &AppHandle, is_tracking: bool) -> Result<(), String> {
     let state: State<'_, AppState> = app_handle.state();
     let pause_info = get_pause_info(&state, is_tracking).await;
-    TrayManager::update_menu(app_handle, is_tracking, pause_info).await
+    let focus_mode_enabled = {
+        let focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+        *focus_enabled
+    };
+    TrayManager::update_menu(
+        app_handle,
+        is_tracking,
+        pause_info,
+        Some(focus_mode_enabled),
+    )
+    .await
 }
 
 // Tauri commands
@@ -682,6 +692,14 @@ pub async fn enable_focus_mode(
         *focus_enabled = true;
     }
 
+    // Update tray menu to reflect focus mode change
+    let is_tracking = {
+        let tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
+        *tracking
+    };
+    let pause_info = get_pause_info(&state, is_tracking).await;
+    TrayManager::update_menu(&app_handle, is_tracking, pause_info, Some(true)).await?;
+
     // Emit event to frontend
     app_handle
         .emit("focus-mode-changed", true)
@@ -718,6 +736,14 @@ pub async fn disable_focus_mode(
         let mut focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
         *focus_enabled = false;
     }
+
+    // Update tray menu to reflect focus mode change
+    let is_tracking = {
+        let tracking = state.is_tracking.lock().map_err(|e| e.to_string())?;
+        *tracking
+    };
+    let pause_info = get_pause_info(&state, is_tracking).await;
+    TrayManager::update_menu(&app_handle, is_tracking, pause_info, Some(false)).await?;
 
     // Emit event to frontend
     app_handle
@@ -1064,52 +1090,143 @@ pub async fn show_focus_overlay(
         urlencoding::encode(&reason)
     );
 
-    println!("Creating overlay with URL: {}", url);
+    println!("Creating overlays with URL: {}", url);
 
-    if let Some(window) = app_handle.get_webview_window("focus-overlay") {
-        // If window exists, just show it and set focus
-        println!("Showing existing overlay window");
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-    } else {
-        // Create new overlay window using WebviewWindowBuilder
-        println!("Creating new overlay window");
-        use tauri::WebviewWindowBuilder;
+    // Get all available monitors
+    let monitors = match app_handle.available_monitors() {
+        Ok(monitors) => monitors,
+        Err(e) => {
+            println!(
+                "Failed to get monitors, falling back to single overlay: {}",
+                e
+            );
+            vec![] // Fall back to single overlay
+        }
+    };
 
-        let window_result = WebviewWindowBuilder::new(
-            &app_handle,
-            "focus-overlay",
-            tauri::WebviewUrl::App(url.into()),
-        )
-        .title("Focus Mode - App Blocked")
-        .fullscreen(true) // Use fullscreen instead of manual sizing
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .closable(false)
-        .minimizable(false)
-        .maximizable(false)
-        .resizable(false)
-        .decorations(false)
-        .visible(false) // Start hidden to prevent flickering
-        .focused(true) // Focus during creation for better input handling
-        .transparent(true) // Make window transparent for overlay effect
-        .build();
+    println!("Found {} monitor(s)", monitors.len());
 
-        match window_result {
-            Ok(window) => {
-                println!("Successfully created overlay window, now showing it");
-                // Small delay to ensure window is fully initialized
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                // Show and focus only after everything is configured
+    // If we have multiple monitors, create overlay on each one
+    if monitors.len() > 1 {
+        for (index, monitor) in monitors.iter().enumerate() {
+            let window_label = format!("focus-overlay-{}", index);
+
+            // Check if overlay already exists for this monitor
+            if let Some(window) = app_handle.get_webview_window(&window_label) {
+                println!("Showing existing overlay window on monitor {}", index);
                 window.show().map_err(|e| e.to_string())?;
-                window.set_focus().map_err(|e| e.to_string())?;
-                // Additional delay and re-focus to ensure proper focus
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                window.set_focus().map_err(|e| e.to_string())?;
+                if index == 0 {
+                    // Only focus the first overlay to avoid focus conflicts
+                    window.set_focus().map_err(|e| e.to_string())?;
+                }
+                continue;
             }
-            Err(e) => {
-                println!("Failed to create overlay window: {}", e);
-                return Err(e.to_string());
+
+            // Create new overlay window for this monitor
+            println!(
+                "Creating new overlay window on monitor {} at position ({}, {}), size {}x{}",
+                index,
+                monitor.position().x,
+                monitor.position().y,
+                monitor.size().width,
+                monitor.size().height
+            );
+
+            use tauri::WebviewWindowBuilder;
+
+            let window_result = WebviewWindowBuilder::new(
+                &app_handle,
+                &window_label,
+                tauri::WebviewUrl::App(url.clone().into()),
+            )
+            .title(&format!("Focus Mode - App Blocked (Monitor {})", index + 1))
+            .position(monitor.position().x as f64, monitor.position().y as f64)
+            .inner_size(monitor.size().width as f64, monitor.size().height as f64)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .closable(false)
+            .minimizable(false)
+            .maximizable(false)
+            .resizable(false)
+            .decorations(false)
+            .visible(false) // Start hidden to prevent flickering
+            .focused(index == 0) // Only focus the first overlay
+            .transparent(true) // Make window transparent for overlay effect
+            .build();
+
+            match window_result {
+                Ok(window) => {
+                    println!(
+                        "Successfully created overlay window on monitor {}, now showing it",
+                        index
+                    );
+                    // Small delay to ensure window is fully initialized
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    // Show the window
+                    window.show().map_err(|e| e.to_string())?;
+                    if index == 0 {
+                        // Only focus the first overlay
+                        window.set_focus().map_err(|e| e.to_string())?;
+                    }
+                }
+                Err(e) => {
+                    println!(
+                        "Failed to create overlay window on monitor {}: {}",
+                        index, e
+                    );
+                    // Continue with other monitors even if one fails
+                }
+            }
+        }
+    } else {
+        // Fall back to single fullscreen overlay (original behavior)
+        println!("Using single overlay (fallback or single monitor)");
+
+        if let Some(window) = app_handle.get_webview_window("focus-overlay") {
+            // If window exists, just show it and set focus
+            println!("Showing existing overlay window");
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        } else {
+            // Create new overlay window using WebviewWindowBuilder
+            println!("Creating new overlay window");
+            use tauri::WebviewWindowBuilder;
+
+            let window_result = WebviewWindowBuilder::new(
+                &app_handle,
+                "focus-overlay",
+                tauri::WebviewUrl::App(url.into()),
+            )
+            .title("Focus Mode - App Blocked")
+            .fullscreen(true) // Use fullscreen instead of manual sizing
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .closable(false)
+            .minimizable(false)
+            .maximizable(false)
+            .resizable(false)
+            .decorations(false)
+            .visible(false) // Start hidden to prevent flickering
+            .focused(true) // Focus during creation for better input handling
+            .transparent(true) // Make window transparent for overlay effect
+            .build();
+
+            match window_result {
+                Ok(window) => {
+                    println!("Successfully created overlay window, now showing it");
+                    // Small delay to ensure window is fully initialized
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    // Show and focus only after everything is configured
+                    window.show().map_err(|e| e.to_string())?;
+                    window.set_focus().map_err(|e| e.to_string())?;
+                    // Additional delay and re-focus to ensure proper focus
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    window.set_focus().map_err(|e| e.to_string())?;
+                }
+                Err(e) => {
+                    println!("Failed to create overlay window: {}", e);
+                    return Err(e.to_string());
+                }
             }
         }
     }
@@ -1119,15 +1236,56 @@ pub async fn show_focus_overlay(
 
 #[tauri::command]
 pub async fn hide_focus_overlay(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(window) = app_handle.get_webview_window("focus-overlay") {
-        println!("Hiding overlay window");
-        window.hide().map_err(|e| e.to_string())?;
+    use tauri::Manager;
 
-        // Close the window entirely to prevent flickering on next show
-        // The window will be recreated next time it's needed
-        if let Err(e) = window.close() {
-            println!("Warning: Failed to close overlay window: {}", e);
+    // Hide and close all overlay windows
+    let mut closed_count = 0;
+
+    // Try to close multi-monitor overlay windows (focus-overlay-0, focus-overlay-1, etc.)
+    for i in 0..10 {
+        // Assume max 10 monitors (reasonable limit)
+        let window_label = format!("focus-overlay-{}", i);
+        if let Some(window) = app_handle.get_webview_window(&window_label) {
+            println!("Hiding overlay window on monitor {}", i);
+            if let Err(e) = window.hide() {
+                println!(
+                    "Warning: Failed to hide overlay window on monitor {}: {}",
+                    i, e
+                );
+            }
+
+            // Close the window entirely to prevent flickering on next show
+            if let Err(e) = window.close() {
+                println!(
+                    "Warning: Failed to close overlay window on monitor {}: {}",
+                    i, e
+                );
+            } else {
+                closed_count += 1;
+            }
         }
     }
+
+    // Also try to close the single overlay window (fallback)
+    if let Some(window) = app_handle.get_webview_window("focus-overlay") {
+        println!("Hiding single overlay window");
+        if let Err(e) = window.hide() {
+            println!("Warning: Failed to hide single overlay window: {}", e);
+        }
+
+        // Close the window entirely to prevent flickering on next show
+        if let Err(e) = window.close() {
+            println!("Warning: Failed to close single overlay window: {}", e);
+        } else {
+            closed_count += 1;
+        }
+    }
+
+    if closed_count > 0 {
+        println!("Successfully closed {} overlay window(s)", closed_count);
+    } else {
+        println!("No overlay windows were found to close");
+    }
+
     Ok(())
 }

@@ -127,79 +127,86 @@ impl CacheManager {
     }
 
     /// Update allowed apps cache entry
-    pub fn update_allowed_apps_cache(&self, app_name: &str, expires_at: Option<i64>) -> Result<(), String> {
+    pub fn update_allowed_apps_cache(
+        &self,
+        app_name: &str,
+        expires_at: Option<i64>,
+    ) -> Result<(), String> {
         let state: tauri::State<AppState> = self.app_handle.state();
-        
+
         let mut cache = state
             .focus_mode_allowed_apps_cache
             .lock()
             .map_err(|e| e.to_string())?;
-        
+
         cache.insert(app_name.to_string(), expires_at);
-        println!("✅ Updated cache for '{}' with expires_at: {:?}", app_name, expires_at);
-        
+        println!(
+            "✅ Updated cache for '{}' with expires_at: {:?}",
+            app_name, expires_at
+        );
+
         Ok(())
     }
 
     /// Remove app from allowed apps cache
     pub fn remove_from_allowed_apps_cache(&self, app_name: &str) -> Result<(), String> {
         let state: tauri::State<AppState> = self.app_handle.state();
-        
+
         let mut cache = state
             .focus_mode_allowed_apps_cache
             .lock()
             .map_err(|e| e.to_string())?;
-        
+
         cache.remove(app_name);
         println!("❌ Removed '{}' from allowed apps cache", app_name);
-        
+
         Ok(())
     }
 
     /// Clear app category cache for a specific app
     pub fn clear_app_category_cache(&self, app_name: &str) -> Result<(), String> {
         let state: tauri::State<AppState> = self.app_handle.state();
-        
+
         let mut cache = state.app_category_cache.lock().map_err(|e| e.to_string())?;
         cache.remove(app_name);
         println!("🗑️ Cleared category cache for '{}'", app_name);
-        
+
         Ok(())
     }
 
     /// Clear all app mappings cache
     pub fn clear_app_mappings_cache(&self) -> Result<(), String> {
         let state: tauri::State<AppState> = self.app_handle.state();
-        
+
         let mut cache = state.app_mappings_cache.lock().map_err(|e| e.to_string())?;
         *cache = None;
         println!("🗑️ Cleared app mappings cache");
-        
+
         Ok(())
     }
 
     /// Update focus mode enabled cache
     pub fn update_focus_mode_enabled_cache(&self, enabled: bool) -> Result<(), String> {
         let state: tauri::State<AppState> = self.app_handle.state();
-        
+
         let mut focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
         *focus_enabled = enabled;
         println!("🔄 Updated focus mode enabled cache: {}", enabled);
-        
+
         Ok(())
     }
 
     /// Update allowed categories cache
     pub fn update_allowed_categories_cache(&self, categories: Vec<String>) -> Result<(), String> {
         let state: tauri::State<AppState> = self.app_handle.state();
-        
+
         let mut allowed_categories = state
             .focus_mode_allowed_categories
             .lock()
             .map_err(|e| e.to_string())?;
         *allowed_categories = categories.clone();
         println!("🔄 Updated allowed categories cache: {:?}", categories);
-        
+
         Ok(())
     }
 }
@@ -264,7 +271,7 @@ async fn handle_cache_invalidation(app_handle: AppHandle, payload: &str) -> Resu
         "allowed_apps_changed" => {
             println!("🔄 Cache invalidation: allowed apps changed");
             println!("📄 Event data: {}", event_data);
-            
+
             if let Some(app_name) = event_data["app_name"].as_str() {
                 if event_data["removed"].as_bool().unwrap_or(false) {
                     // Remove from cache

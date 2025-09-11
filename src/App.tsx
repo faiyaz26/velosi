@@ -39,7 +39,7 @@ function App() {
   const renderActiveView = () => {
     switch (activeView) {
       case "dashboard":
-        return <Dashboard />;
+        return <Dashboard onNavigate={setActiveView} />;
       case "activity-log":
         return <ActivityLog />;
       case "categorization":

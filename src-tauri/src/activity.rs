@@ -100,7 +100,7 @@ pub async fn start_activity_tracking(app_handle: AppHandle) {
 
         let mut interval = interval(check_interval);
         interval.tick().await;
-        println!("🔄 Loop tick - checking tracking status...");
+        println!("🔄 Loop tick - checking tracking and focus mode status...");
 
         // Check if pause timer has expired and auto-resume tracking
         {
@@ -131,38 +131,14 @@ pub async fn start_activity_tracking(app_handle: AppHandle) {
             }
         }
 
-        // Continue with normal activity tracking logic
-        // Check if tracking is enabled
-        let is_tracking = {
-            let tracking_guard = state.is_tracking.lock().unwrap();
-            *tracking_guard
-        };
-        println!("🔍 Is tracking enabled: {}", is_tracking);
-
-        if !is_tracking {
-            println!("Tracking is disabled, skipping...");
-            continue;
-        }
-
-        // Check if user is active
-        let should_track = {
-            let mut tracker = state.tracker.lock().unwrap();
-            tracker.should_track()
-        };
-
-        if !should_track {
-            println!("User is inactive, skipping...");
-            continue;
-        }
-
-        // Get current activity
+        // Get current activity (needed for both tracking and focus mode)
         let current_activity = {
             let mut tracker = state.tracker.lock().unwrap();
             tracker.get_current_activity()
         };
         println!("Raw current_activity result: {:?}", current_activity);
 
-        if let Some(current) = current_activity {
+        if let Some(current) = &current_activity {
             println!(
                 "Current activity: {} - {}",
                 current.app_name, current.window_title
@@ -189,7 +165,7 @@ pub async fn start_activity_tracking(app_handle: AppHandle) {
                 }
             }
 
-            // Check focus mode before proceeding with activity tracking
+            // Check focus mode FIRST (regardless of tracking status)
             let focus_mode = FocusMode::new(app_handle.clone());
             match focus_mode
                 .check_and_block_app(&current.app_name, current.app_bundle_id.as_deref())
@@ -200,14 +176,40 @@ pub async fn start_activity_tracking(app_handle: AppHandle) {
                         println!("App '{}' is blocked by focus mode", current.app_name);
                         // Give the system a moment to update the frontmost app after hiding
                         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                        continue; // Skip tracking this blocked app and recheck immediately
+                        continue; // Skip to next iteration and recheck immediately
                     }
                 }
                 Err(e) => {
                     eprintln!("Error checking focus mode: {}", e);
                 }
             }
+        }
 
+        // Continue with normal activity tracking logic (after focus mode check)
+        // Check if tracking is enabled
+        let is_tracking = {
+            let tracking_guard = state.is_tracking.lock().unwrap();
+            *tracking_guard
+        };
+        println!("🔍 Is tracking enabled: {}", is_tracking);
+
+        if !is_tracking {
+            println!("Tracking is disabled, skipping activity tracking...");
+            continue;
+        }
+
+        // Check if user is active
+        let should_track = {
+            let mut tracker = state.tracker.lock().unwrap();
+            tracker.should_track()
+        };
+
+        if !should_track {
+            println!("User is inactive, skipping...");
+            continue;
+        }
+
+        if let Some(current) = current_activity {
             // Check if there's already an ongoing activity in the database
             match state.db.get_current_activity().await {
                 Ok(Some(ongoing_activity)) => {
