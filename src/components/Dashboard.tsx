@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Shield,
   ShieldCheck,
+  Settings,
 } from "lucide-react";
 import { RingChart } from "@/components/RingChart";
 import { format } from "date-fns";
@@ -62,7 +63,11 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-export function Dashboard() {
+export function Dashboard({
+  onNavigate,
+}: {
+  onNavigate?: (view: string) => void;
+}) {
   const { isInitialized, categoryService } = useCategoryService();
   const [
     activitySummary,
@@ -218,6 +223,20 @@ export function Dashboard() {
     }
   };
 
+  const toggleFocusMode = async () => {
+    try {
+      if (focusModeEnabled) {
+        await invoke("disable_focus_mode");
+        setFocusModeEnabled(false);
+      } else {
+        await invoke("enable_focus_mode");
+        setFocusModeEnabled(true);
+      }
+    } catch (error) {
+      console.error("Failed to toggle focus mode:", error);
+    }
+  };
+
   const loadPauseStatus = async () => {
     try {
       const status = await invoke<{
@@ -273,61 +292,77 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Top Row - Tracking Status */}
-      <div className="grid grid-cols-1 gap-4">
-        {/* Tracking Status */}
+      {/* Top Row - Tracking and Focus Mode Status */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Tracking Status Card */}
         <Card>
-          <CardHeader className="pb-3"></CardHeader>
+          <CardHeader className="pb-3">
+            <h3 className="text-lg font-semibold">Tracking Status</h3>
+          </CardHeader>
           <CardContent className="space-y-4">
-            {/* Current Status */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-base font-semibold">
-                  {isTracking
-                    ? "Tracking Active"
-                    : pauseStatus.is_paused
-                    ? "Tracking temporarily Paused"
-                    : "Tracking Paused"}
-                </p>
-                <p className="text-muted-foreground text-sm">
-                  {isTracking
-                    ? "Activity tracking is running"
-                    : pauseStatus.is_paused
-                    ? pauseStatus.is_indefinite
-                      ? "Paused indefinitely - click Resume to continue"
-                      : `Resumes in ${Math.ceil(
-                          pauseStatus.remaining_seconds / 60
-                        )} minutes`
-                    : "Activity tracking is stopped"}
-                </p>
-              </div>
-              {isTracking ? (
-                <Pause className="h-6 w-6 text-green-500" />
-              ) : pauseStatus.is_paused ? (
-                <Clock className="h-6 w-6 text-orange-500" />
-              ) : (
-                <Play className="h-6 w-6 text-red-500" />
-              )}
-            </div>
-
-            {/* Focus Mode Status */}
-            {focusModeEnabled && (
-              <div className="flex items-center space-x-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
-                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            {/* Tracking Status */}
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg border ${
+                isTracking
+                  ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
+                  : pauseStatus.is_paused
+                  ? "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800"
+                  : "bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800"
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                {isTracking ? (
+                  <Pause className="h-5 w-5 text-green-600 dark:text-green-400" />
+                ) : pauseStatus.is_paused ? (
+                  <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                ) : (
+                  <Play className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                )}
                 <div>
-                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                    Focus Mode Active
+                  <p
+                    className={`text-sm font-medium ${
+                      isTracking
+                        ? "text-green-900 dark:text-green-100"
+                        : pauseStatus.is_paused
+                        ? "text-orange-900 dark:text-orange-100"
+                        : "text-gray-900 dark:text-gray-100"
+                    }`}
+                  >
+                    {isTracking
+                      ? "Tracking Active"
+                      : pauseStatus.is_paused
+                      ? "Tracking Paused"
+                      : "Tracking Stopped"}
                   </p>
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                    {focusModeCategories.length > 0
-                      ? `Allowing ${focusModeCategories.length} category${
-                          focusModeCategories.length === 1 ? "" : "ies"
-                        }`
-                      : "Blocking all apps"}
+                  <p
+                    className={`text-xs ${
+                      isTracking
+                        ? "text-green-700 dark:text-green-300"
+                        : pauseStatus.is_paused
+                        ? "text-orange-700 dark:text-orange-300"
+                        : "text-gray-600 dark:text-gray-400"
+                    }`}
+                  >
+                    {isTracking
+                      ? "Activity tracking is running"
+                      : pauseStatus.is_paused
+                      ? pauseStatus.is_indefinite
+                        ? "Paused indefinitely"
+                        : `Resumes in ${Math.ceil(
+                            pauseStatus.remaining_seconds / 60
+                          )} minutes`
+                      : "Activity tracking is stopped"}
                   </p>
                 </div>
               </div>
-            )}
+              {isTracking ? (
+                <Pause className="h-6 w-6 text-green-600 dark:text-green-400" />
+              ) : pauseStatus.is_paused ? (
+                <Clock className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+              ) : (
+                <Play className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+              )}
+            </div>
 
             {/* Control Buttons */}
             <div className="flex gap-2">
@@ -337,28 +372,28 @@ export function Dashboard() {
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm">
                         <Pause className="h-4 w-4 mr-2" />
-                        Pause
+                        Pause tracking
                         <ChevronDown className="h-4 w-4 ml-2" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
                       <DropdownMenuItem onClick={() => pauseForDuration(1)}>
-                        Pause for 1 minute
+                        Pause tracking for 1 minute
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => pauseForDuration(5)}>
-                        Pause for 5 minutes
+                        Pause tracking for 5 minutes
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => pauseForDuration(30)}>
-                        Pause for 30 minutes
+                        Pause tracking for 30 minutes
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => pauseForDuration(60)}>
-                        Pause for 1 hour
+                        Pause tracking for 1 hour
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={pauseUntilTomorrow}>
-                        Pause until tomorrow
+                        Pause tracking until tomorrow
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={pauseIndefinitely}>
-                        Pause indefinitely
+                        Pause tracking indefinitely
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -372,6 +407,91 @@ export function Dashboard() {
                   Start Tracking
                 </Button>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Focus Mode Status Card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <h3 className="text-lg font-semibold">Focus Mode</h3>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Focus Mode Status */}
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg border ${
+                focusModeEnabled
+                  ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                  : "bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800"
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                {focusModeEnabled ? (
+                  <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                ) : (
+                  <Shield className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                )}
+                <div>
+                  <p
+                    className={`text-sm font-medium ${
+                      focusModeEnabled
+                        ? "text-blue-900 dark:text-blue-100"
+                        : "text-gray-900 dark:text-gray-100"
+                    }`}
+                  >
+                    Focus Mode {focusModeEnabled ? "Active" : "Inactive"}
+                  </p>
+                  <p
+                    className={`text-xs ${
+                      focusModeEnabled
+                        ? "text-blue-700 dark:text-blue-300"
+                        : "text-gray-600 dark:text-gray-400"
+                    }`}
+                  >
+                    {focusModeEnabled
+                      ? focusModeCategories.length > 0
+                        ? `Allowing ${focusModeCategories.length} category${
+                            focusModeCategories.length === 1 ? "" : "ies"
+                          }`
+                        : "Blocking all apps"
+                      : "All apps allowed"}
+                  </p>
+                </div>
+              </div>
+              {focusModeEnabled ? (
+                <ShieldCheck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              ) : (
+                <Shield className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+              )}
+            </div>
+
+            {/* Focus Mode Control Buttons */}
+            <div className="flex gap-2">
+              {focusModeEnabled ? (
+                <Button variant="outline" size="sm" onClick={toggleFocusMode}>
+                  <Pause className="h-4 w-4 mr-2" />
+                  Pause focus mode
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={toggleFocusMode}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Play className="h-4 w-4 mr-2" />
+                  Resume focus mode
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onNavigate?.("focus-mode")}
+                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+              >
+                <Settings className="h-4 w-4 mr-1" />
+                Configure
+              </Button>
             </div>
           </CardContent>
         </Card>

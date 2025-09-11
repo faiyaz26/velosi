@@ -366,7 +366,7 @@ impl TrayManager {
         let pause_submenu = Submenu::with_id_and_items(
             app,
             "pause_menu",
-            "Pause tracking options",
+            "Pause Tracking Options",
             true,
             &[
                 &pause_1min,
