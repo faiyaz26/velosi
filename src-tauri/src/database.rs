@@ -773,7 +773,9 @@ impl Database {
     }
 
     /// Get allowed apps with their expiry times (for caching)
-    pub async fn get_focus_mode_allowed_apps_with_expiry(&self) -> Result<Vec<(String, Option<i64>)>, sqlx::Error> {
+    pub async fn get_focus_mode_allowed_apps_with_expiry(
+        &self,
+    ) -> Result<Vec<(String, Option<i64>)>, sqlx::Error> {
         let now = chrono::Utc::now().timestamp();
         let rows = sqlx::query(
             "SELECT app_pattern, expires_at FROM focus_mode_allowed_apps 
@@ -784,11 +786,14 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(|row| {
-            let app_pattern: String = row.get("app_pattern");
-            let expires_at: Option<i64> = row.get("expires_at");
-            (app_pattern, expires_at)
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let app_pattern: String = row.get("app_pattern");
+                let expires_at: Option<i64> = row.get("expires_at");
+                (app_pattern, expires_at)
+            })
+            .collect())
     }
 
     /// Check if an app is allowed (either permanently or temporarily)
@@ -839,17 +844,5 @@ impl Database {
         .await?;
 
         Ok(row.is_some())
-    }
-
-    /// Clean up expired allowed apps
-    pub async fn cleanup_expired_focus_mode_apps(&self) -> Result<(), sqlx::Error> {
-        let now = chrono::Utc::now().timestamp();
-        sqlx::query(
-            "DELETE FROM focus_mode_allowed_apps WHERE expires_at IS NOT NULL AND expires_at <= ?",
-        )
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
     }
 }

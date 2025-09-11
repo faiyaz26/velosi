@@ -101,31 +101,6 @@ impl CacheManager {
         Ok(mappings)
     }
 
-    /// Invalidate all caches
-    pub async fn invalidate_all_caches(&self) -> Result<(), String> {
-        let state: tauri::State<AppState> = self.app_handle.state();
-
-        // Clear all caches
-        {
-            let mut allowed_cache = state
-                .focus_mode_allowed_apps_cache
-                .lock()
-                .map_err(|e| e.to_string())?;
-            allowed_cache.clear();
-        }
-        {
-            let mut mappings_cache = state.app_mappings_cache.lock().map_err(|e| e.to_string())?;
-            *mappings_cache = None;
-        }
-        {
-            let mut category_cache = state.app_category_cache.lock().map_err(|e| e.to_string())?;
-            category_cache.clear();
-        }
-
-        println!("🧹 Cleared all focus mode caches");
-        Ok(())
-    }
-
     /// Update allowed apps cache entry
     pub fn update_allowed_apps_cache(
         &self,
@@ -229,12 +204,6 @@ pub fn setup_cache_listeners_sync(app_handle: AppHandle) {
             });
         });
     });
-}
-
-/// Event listener for cache invalidation (async version - kept for backward compatibility)
-pub async fn setup_cache_listeners(app_handle: AppHandle) -> Result<(), String> {
-    setup_cache_listeners_sync(app_handle);
-    Ok(())
 }
 
 /// Handle cache invalidation events
