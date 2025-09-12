@@ -8,6 +8,18 @@ mod models;
 mod tracker;
 mod tray;
 
+#[cfg(test)]
+mod database_tests;
+
+#[cfg(test)]
+mod focus_mode_tests;
+
+#[cfg(test)]
+mod tracker_tests;
+
+#[cfg(test)]
+mod test_config;
+
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, WindowEvent};
 use tokio::time::Instant;
@@ -17,6 +29,7 @@ use database::Database;
 use tracker::{ActivityTracker, CurrentActivity};
 
 // Application state
+#[derive(Clone)]
 pub struct AppState {
     db: Arc<Database>,
     tracker: Arc<Mutex<ActivityTracker>>,
