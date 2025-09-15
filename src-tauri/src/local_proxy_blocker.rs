@@ -117,18 +117,40 @@ impl LocalProxyBlocker {
         }
     }
 
+    /// Get the proxy port from database or use default
+    pub async fn get_proxy_port(&self) -> u16 {
+        if let Some(ref db) = self.database {
+            match db.get_proxy_port().await {
+                Ok(port) => port,
+                Err(e) => {
+                    println!(
+                        "⚠️ Failed to get proxy port from database: {}, using default",
+                        e
+                    );
+                    PROXY_PORT
+                }
+            }
+        } else {
+            println!("⚠️ No database connection, using default proxy port");
+            PROXY_PORT
+        }
+    }
+
     pub async fn start_proxy_server(&self) -> Result<(), String> {
         // Load blocked domains from database
         if let Err(e) = self.load_blocked_domains().await {
             println!("⚠️ Failed to load blocked domains: {}", e);
         }
 
-        // Try to bind to the fixed port
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", PROXY_PORT))
-            .await
-            .map_err(|e| format!("Failed to bind to port {}: {}", PROXY_PORT, e))?;
+        // Get proxy port from database
+        let proxy_port = self.get_proxy_port().await;
 
-        println!("✅ Proxy server started on port: {}", PROXY_PORT);
+        // Try to bind to the configured port
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .map_err(|e| format!("Failed to bind to port {}: {}", proxy_port, e))?;
+
+        println!("✅ Proxy server started on port: {}", proxy_port);
         Self::log_event(
             &self.proxy_logs,
             "START",
@@ -622,7 +644,8 @@ impl LocalProxyBlocker {
     }
 
     pub async fn get_proxy_info(&self) -> (String, u16) {
-        ("127.0.0.1".to_string(), PROXY_PORT)
+        let port = self.get_proxy_port().await;
+        ("127.0.0.1".to_string(), port)
     }
 
     pub async fn is_blocking(&self) -> bool {

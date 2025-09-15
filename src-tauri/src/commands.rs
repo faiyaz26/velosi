@@ -1693,3 +1693,30 @@ pub async fn initialize_proxy_server(
         "proxy_port": port
     }))
 }
+
+#[tauri::command]
+pub async fn get_proxy_port(state: State<'_, AppState>) -> Result<u16, String> {
+    let db = &state.db;
+    db.get_proxy_port()
+        .await
+        .map_err(|e| format!("Failed to get proxy port: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_proxy_port(
+    state: State<'_, AppState>,
+    port: u16,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let db = &state.db;
+    db.set_proxy_port(port)
+        .await
+        .map_err(|e| format!("Failed to set proxy port: {}", e))?;
+
+    // Emit event to notify frontend of proxy port change
+    app_handle
+        .emit("proxy-port-changed", port)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    Ok(())
+}

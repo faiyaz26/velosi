@@ -902,4 +902,30 @@ impl Database {
 
         Ok(row.is_some())
     }
+
+    /// Get proxy port setting
+    pub async fn get_proxy_port(&self) -> Result<u16, sqlx::Error> {
+        let row = sqlx::query("SELECT value FROM focus_mode_settings WHERE key = 'proxy_port'")
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let value: String = row.get("value");
+            Ok(value.parse::<u16>().unwrap_or(62828)) // Default to 62828 if parsing fails
+        } else {
+            Ok(62828) // Default port
+        }
+    }
+
+    /// Set proxy port setting
+    pub async fn set_proxy_port(&self, port: u16) -> Result<(), sqlx::Error> {
+        let value = port.to_string();
+        sqlx::query(
+            "INSERT OR REPLACE INTO focus_mode_settings (key, value) VALUES ('proxy_port', ?)",
+        )
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }

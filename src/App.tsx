@@ -8,7 +8,6 @@ import Categorization from "@/components/Categorization";
 import { FocusMode } from "@/components/FocusMode";
 import { FocusOverlay } from "@/components/FocusOverlay";
 import { Settings } from "@/components/Settings";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Minimize2 } from "lucide-react";
 import { categoryService } from "@/lib/categoryService";
@@ -119,9 +118,6 @@ function App() {
         {/* Top bar */}
         <div className="border-b border-border p-4 flex-shrink-0">
           <div className="flex items-center justify-end gap-2">
-            <div className="no-drag">
-              <ThemeToggle />
-            </div>
             <Button
               onClick={handleMinimize}
               size="sm"

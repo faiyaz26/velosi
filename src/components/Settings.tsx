@@ -10,19 +10,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  User,
-  Bell,
-  Database,
   Palette,
   Shield,
   CheckCircle,
   XCircle,
   RefreshCw,
+  Network,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 export function Settings() {
   const [hasPermissions, setHasPermissions] = useState<boolean | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
+  const [proxyPort, setProxyPort] = useState<string>("62828");
+  const [savingProxyPort, setSavingProxyPort] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const stored = localStorage.getItem("theme");
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
 
   const checkPermissionStatus = async () => {
     setCheckingPermissions(true);
@@ -39,7 +49,47 @@ export function Settings() {
 
   useEffect(() => {
     checkPermissionStatus();
+    loadProxyPort();
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
+  const loadProxyPort = async () => {
+    try {
+      const port = await invoke<number>("get_proxy_port");
+      setProxyPort(port.toString());
+    } catch (error) {
+      console.error("Failed to load proxy port:", error);
+    }
+  };
+
+  const saveProxyPort = async () => {
+    setSavingProxyPort(true);
+    try {
+      const port = parseInt(proxyPort);
+      if (isNaN(port) || port < 1024 || port > 65535) {
+        alert("Please enter a valid port number between 1024 and 65535");
+        return;
+      }
+      await invoke("set_proxy_port", { port });
+      alert("Proxy port saved successfully!");
+    } catch (error) {
+      console.error("Failed to save proxy port:", error);
+      alert("Failed to save proxy port");
+    } finally {
+      setSavingProxyPort(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -208,114 +258,6 @@ export function Settings() {
           </CardContent>
         </Card>
 
-        {/* General Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              General
-            </CardTitle>
-            <CardDescription>
-              Basic application settings and preferences
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Username</div>
-              <Input
-                id="username"
-                placeholder="Enter your username"
-                defaultValue="User"
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium">
-                Tracking Interval (seconds)
-              </div>
-              <Input
-                id="tracking-interval"
-                type="number"
-                placeholder="5"
-                defaultValue="5"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notifications
-            </CardTitle>
-            <CardDescription>
-              Configure when and how you receive notifications
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Break Reminders</p>
-                <p className="text-sm text-muted-foreground">
-                  Get reminded to take breaks during long work sessions
-                </p>
-              </div>
-              <Button variant="outline" size="sm">
-                Configure
-              </Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Daily Summary</p>
-                <p className="text-sm text-muted-foreground">
-                  Receive a daily summary of your activities
-                </p>
-              </div>
-              <Button variant="outline" size="sm">
-                Configure
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Data Management */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Data Management
-            </CardTitle>
-            <CardDescription>
-              Manage your activity data and privacy settings
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Export Data</p>
-                <p className="text-sm text-muted-foreground">
-                  Export your activity data to a file
-                </p>
-              </div>
-              <Button variant="outline" size="sm">
-                Export
-              </Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Clear Data</p>
-                <p className="text-sm text-muted-foreground">
-                  Remove all stored activity data
-                </p>
-              </div>
-              <Button variant="destructive" size="sm">
-                Clear All
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Appearance */}
         <Card>
           <CardHeader>
@@ -335,12 +277,65 @@ export function Settings() {
                   Choose between light and dark modes
                 </p>
               </div>
-              <Button variant="outline" size="sm">
-                Dark Mode
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleTheme}
+                className="flex items-center gap-2"
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+                {theme === "dark" ? "Light" : "Dark"} mode
               </Button>
             </div>
           </CardContent>
         </Card>
+
+        {/* Proxy Server - Hidden for now */}
+        {false && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Network className="h-5 w-5" />
+                Proxy Server
+              </CardTitle>
+              <CardDescription>
+                Configure the local proxy server for website blocking
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Proxy Server Port</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="proxy-port"
+                    type="number"
+                    placeholder="62828"
+                    value={proxyPort}
+                    onChange={(e) => setProxyPort(e.target.value)}
+                    min="1024"
+                    max="65535"
+                    className="w-32"
+                  />
+                  <Button
+                    onClick={saveProxyPort}
+                    disabled={savingProxyPort}
+                    size="sm"
+                  >
+                    {savingProxyPort ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Port number for the local proxy server (1024-65535). Default:
+                  62828
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
