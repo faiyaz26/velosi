@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
+use url::Url;
 
 #[cfg(target_os = "macos")]
 use std::process::Command;
@@ -612,16 +613,17 @@ impl ActivityTracker {
 
             let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, process_id);
             if process_handle.is_null() {
+                // Clone the window title and compute segment info from a reference
+                let wt_clone = window_title_str.clone();
+                let seg = self
+                    .extract_segment_info_windows(&"Unknown Application".to_string(), &wt_clone);
                 return Some(CurrentActivity {
                     app_name: "Unknown Application".to_string(),
                     app_bundle_id: Some(process_id.to_string()),
-                    window_title: window_title_str,
+                    window_title: wt_clone,
                     url: None,
                     timestamp: Utc::now(),
-                    segment_info: self.extract_segment_info_windows(
-                        &"Unknown Application".to_string(),
-                        &window_title_str,
-                    ),
+                    segment_info: seg,
                 });
             }
 
