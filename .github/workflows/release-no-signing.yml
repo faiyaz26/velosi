@@ -46,8 +46,8 @@ jobs:
         with:
           name: macos-artifacts
           path: |
-            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/x86_64-apple-darwin/release/velosi
+            src-tauri/target/aarch64-apple-darwin/release/velosi
 
   build-windows:
     runs-on: windows-latest
@@ -83,8 +83,7 @@ jobs:
         with:
           name: windows-artifacts
           path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/velosi.exe
 
   create-release:
     needs: [build-macos, build-windows]
@@ -113,9 +112,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/macos/*.dmg
-            artifacts/windows/*.msi
-            artifacts/windows/*.exe
+            artifacts/macos/velosi
+            artifacts/windows/velosi.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
