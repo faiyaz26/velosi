@@ -22,6 +22,11 @@ pub fn get_migrations() -> Vec<Migration> {
             description: "create_focus_mode_preferences".to_string(),
             sql: include_str!("../migrations/2_create_focus_mode_preferences.sql").to_string(),
         },
+        Migration {
+            version: 3,
+            description: "add_blocking_preferences".to_string(),
+            sql: include_str!("../migrations/3_add_blocking_preferences.sql").to_string(),
+        },
     ]
 }
 

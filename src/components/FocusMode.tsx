@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import {
   Focus,
   Shield,
@@ -71,13 +72,19 @@ export function FocusMode() {
     setWebsiteBlockerStatus,
   ] = useState<WebsiteBlockerStatus | null>(null);
   const [blockedWebsites, setBlockedWebsites] = useState<BlockedWebsite[]>([]);
-  const [websiteBlockingEnabled, setWebsiteBlockingEnabled] = useState(false);
   const [proxyLogs, setProxyLogs] = useState<ProxyLog[]>([]);
+
+  // Blocking preferences state
+  const [appBlockingEnabled, setAppBlockingEnabled] = useState(true);
+  const [websiteBlockingPreference, setWebsiteBlockingPreference] = useState(
+    true
+  );
 
   useEffect(() => {
     loadFocusModeStatus();
     loadCategories();
     loadAllowedApps();
+    loadBlockingPreferences();
     initializeProxyServer();
     loadWebsiteBlockerStatus();
 
@@ -194,6 +201,19 @@ export function FocusMode() {
     }
   };
 
+  const loadBlockingPreferences = async () => {
+    try {
+      const [appBlocking, websiteBlocking] = await Promise.all([
+        invoke<boolean>("get_app_blocking_enabled"),
+        invoke<boolean>("get_website_blocking_enabled"),
+      ]);
+      setAppBlockingEnabled(appBlocking);
+      setWebsiteBlockingPreference(websiteBlocking);
+    } catch (error) {
+      console.error("Failed to load blocking preferences:", error);
+    }
+  };
+
   const toggleFocusMode = async () => {
     try {
       if (focusModeEnabled) {
@@ -225,13 +245,32 @@ export function FocusMode() {
     }
   };
 
+  const toggleAppBlocking = async () => {
+    try {
+      const newValue = !appBlockingEnabled;
+      await invoke("set_app_blocking_enabled", { enabled: newValue });
+      setAppBlockingEnabled(newValue);
+    } catch (error) {
+      console.error("Failed to toggle app blocking:", error);
+    }
+  };
+
+  const toggleWebsiteBlocking = async () => {
+    try {
+      const newValue = !websiteBlockingPreference;
+      await invoke("set_website_blocking_enabled", { enabled: newValue });
+      setWebsiteBlockingPreference(newValue);
+    } catch (error) {
+      console.error("Failed to toggle website blocking:", error);
+    }
+  };
+
   const loadWebsiteBlockerStatus = async () => {
     try {
       const status = await invoke<WebsiteBlockerStatus>(
         "get_website_blocker_status"
       );
       setWebsiteBlockerStatus(status);
-      setWebsiteBlockingEnabled(status.running);
     } catch (error) {
       console.error("Failed to load website blocker status:", error);
     }
@@ -391,6 +430,66 @@ export function FocusMode() {
         )}
       </Card>
 
+      {/* Blocking Preferences */}
+      <Card className="p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <Shield className="h-5 w-5 text-orange-500" />
+          <h3 className="font-semibold text-foreground">
+            Blocking Preferences
+          </h3>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-4">
+          Choose which types of blocking to enable during focus mode.
+        </p>
+
+        <div className="space-y-4">
+          {/* App Blocking Toggle */}
+          <div className="flex items-center justify-between p-3 border rounded-lg">
+            <div className="flex items-center space-x-3">
+              <div
+                className={cn(
+                  "w-3 h-3 rounded-full",
+                  appBlockingEnabled ? "bg-green-500" : "bg-gray-400"
+                )}
+              />
+              <div>
+                <p className="font-medium text-foreground">App Blocking</p>
+                <p className="text-xs text-muted-foreground">
+                  Block apps outside allowed categories
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={appBlockingEnabled}
+              onCheckedChange={toggleAppBlocking}
+            />
+          </div>
+
+          {/* Website Blocking Toggle */}
+          <div className="flex items-center justify-between p-3 border rounded-lg">
+            <div className="flex items-center space-x-3">
+              <div
+                className={cn(
+                  "w-3 h-3 rounded-full",
+                  websiteBlockingPreference ? "bg-green-500" : "bg-gray-400"
+                )}
+              />
+              <div>
+                <p className="font-medium text-foreground">Website Blocking</p>
+                <p className="text-xs text-muted-foreground">
+                  Block distracting websites via proxy
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={websiteBlockingPreference}
+              onCheckedChange={toggleWebsiteBlocking}
+            />
+          </div>
+        </div>
+      </Card>
+
       {/* Website Blocking */}
       <Card className="p-6">
         <div className="flex items-center space-x-2 mb-4">
@@ -399,8 +498,8 @@ export function FocusMode() {
         </div>
 
         <p className="text-sm text-muted-foreground mb-4">
-          Block distracting websites during focus mode. This works by routing
-          traffic through a local proxy.
+          Website blocking status and activity. Configure blocking preferences
+          above to enable/disable.
         </p>
 
         <div className="p-3 bg-muted rounded-lg mb-4">
@@ -428,22 +527,28 @@ export function FocusMode() {
             <div
               className={cn(
                 "w-3 h-3 rounded-full",
-                websiteBlockerStatus?.system_proxy_enabled
-                  ? "bg-green-500"
-                  : "bg-red-500"
+                websiteBlockingPreference
+                  ? websiteBlockerStatus?.system_proxy_enabled
+                    ? "bg-green-500"
+                    : "bg-red-500"
+                  : "bg-gray-400"
               )}
             />
             <div>
               <p className="font-medium text-foreground">
                 System Proxy:{" "}
-                {websiteBlockerStatus?.system_proxy_enabled
-                  ? "Enabled"
+                {websiteBlockingPreference
+                  ? websiteBlockerStatus?.system_proxy_enabled
+                    ? "Enabled"
+                    : "Disabled"
                   : "Disabled"}
               </p>
               <p className="text-xs text-muted-foreground">
-                {websiteBlockerStatus?.system_proxy_enabled
-                  ? "System proxy configured - blocking social & entertainment sites"
-                  : "System proxy not configured - websites not blocked"}
+                {websiteBlockingPreference
+                  ? websiteBlockerStatus?.system_proxy_enabled
+                    ? "System proxy configured - blocking social & entertainment sites"
+                    : "System proxy not configured - websites not blocked"
+                  : "Website blocking disabled in preferences"}
               </p>
             </div>
           </div>

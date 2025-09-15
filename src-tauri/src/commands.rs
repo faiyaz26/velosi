@@ -736,22 +736,32 @@ pub async fn enable_focus_mode(
         }
     }
 
-    // Start website blocker when focus mode is enabled
-    if let Err(e) = start_website_blocking_internal(&state, &app_handle).await {
-        println!("⚠️ Warning: Failed to start website blocker: {}", e);
+    // Start website blocker when focus mode is enabled (only if website blocking is enabled)
+    let website_blocking_enabled = state
+        .db
+        .get_website_blocking_enabled()
+        .await
+        .unwrap_or(true); // Default to true if error
 
-        // Emit a warning event to the frontend so users know about the permission issue
-        app_handle
-            .emit(
-                "website-blocking-warning",
-                serde_json::json!({
-                    "message": e,
-                    "type": "permission_error"
-                }),
-            )
-            .map_err(|e| e.to_string())?;
+    if website_blocking_enabled {
+        if let Err(e) = start_website_blocking_internal(&state, &app_handle).await {
+            println!("⚠️ Warning: Failed to start website blocker: {}", e);
 
-        // Don't fail the entire focus mode enable if website blocker fails
+            // Emit a warning event to the frontend so users know about the permission issue
+            app_handle
+                .emit(
+                    "website-blocking-warning",
+                    serde_json::json!({
+                        "message": e,
+                        "type": "permission_error"
+                    }),
+                )
+                .map_err(|e| e.to_string())?;
+
+            // Don't fail the entire focus mode enable if website blocker fails
+        }
+    } else {
+        println!("ℹ️ Website blocking disabled by user preference, skipping website blocker initialization");
     }
 
     Ok(())
@@ -792,10 +802,22 @@ pub async fn disable_focus_mode(
         )
         .map_err(|e| e.to_string())?;
 
-    // Stop website blocker when focus mode is disabled
-    if let Err(e) = stop_website_blocking_internal(&state).await {
-        println!("⚠️ Warning: Failed to stop website blocker: {}", e);
-        // Don't fail the entire focus mode disable if website blocker fails
+    // Stop website blocker when focus mode is disabled (only if website blocking was enabled)
+    let website_blocking_enabled = state
+        .db
+        .get_website_blocking_enabled()
+        .await
+        .unwrap_or(true); // Default to true if error
+
+    if website_blocking_enabled {
+        if let Err(e) = stop_website_blocking_internal(&state).await {
+            println!("⚠️ Warning: Failed to stop website blocker: {}", e);
+            // Don't fail the entire focus mode disable if website blocker fails
+        }
+    } else {
+        println!(
+            "ℹ️ Website blocking disabled by user preference, skipping website blocker shutdown"
+        );
     }
 
     Ok(())
@@ -1319,6 +1341,79 @@ pub async fn hide_focus_overlay(app_handle: AppHandle) -> Result<(), String> {
         println!("Successfully closed {} overlay window(s)", closed_count);
     } else {
         println!("No overlay windows were found to close");
+    }
+
+    Ok(())
+}
+
+// =============================================================================
+// BLOCKING PREFERENCES COMMANDS
+// =============================================================================
+
+#[tauri::command]
+pub async fn get_app_blocking_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .db
+        .get_app_blocking_enabled()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_app_blocking_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state
+        .db
+        .set_app_blocking_enabled(enabled)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_website_blocking_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .db
+        .get_website_blocking_enabled()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_website_blocking_enabled(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    // Save the preference to database
+    state
+        .db
+        .set_website_blocking_enabled(enabled)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Check if focus mode is currently enabled
+    let focus_mode_enabled = {
+        let focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+        *focus_enabled
+    };
+
+    // If focus mode is enabled, enable/disable system proxy based on the new preference
+    if focus_mode_enabled {
+        if enabled {
+            // Enable website blocking (system proxy)
+            if let Err(e) = start_website_blocking_internal(&state, &app_handle).await {
+                println!("⚠️ Warning: Failed to start website blocker: {}", e);
+                // Don't fail the preference setting if website blocker fails
+            }
+        } else {
+            // Disable website blocking (system proxy)
+            if let Err(e) = stop_website_blocking_internal(&state).await {
+                println!("⚠️ Warning: Failed to stop website blocker: {}", e);
+                // Don't fail the preference setting if website blocker fails
+            }
+        }
     }
 
     Ok(())

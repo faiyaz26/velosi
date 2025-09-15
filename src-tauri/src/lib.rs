@@ -224,6 +224,11 @@ pub fn run() {
             commands::remove_focus_mode_allowed_app,
             commands::show_focus_overlay,
             commands::hide_focus_overlay,
+            // Blocking preferences commands
+            commands::get_app_blocking_enabled,
+            commands::set_app_blocking_enabled,
+            commands::get_website_blocking_enabled,
+            commands::set_website_blocking_enabled,
             // Website blocking commands
             commands::start_website_blocker,
             commands::stop_website_blocker,

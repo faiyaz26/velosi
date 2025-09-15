@@ -15,6 +15,7 @@ import { categoryService } from "@/lib/categoryService";
 
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
+  const [isNavigating, setIsNavigating] = useState(false);
 
   // Check if this is the focus overlay window
   const isOverlayWindow = window.location.pathname === "/focus-overlay";
@@ -76,12 +77,25 @@ function App() {
     }
   };
 
+  const handleViewChange = (view: string) => {
+    if (view === "activity-log") {
+      setIsNavigating(true);
+      // Small delay to show loading state before navigation
+      setTimeout(() => {
+        setActiveView(view);
+        setIsNavigating(false);
+      }, 100);
+    } else {
+      setActiveView(view);
+    }
+  };
+
   const renderActiveView = () => {
     switch (activeView) {
       case "dashboard":
         return <Dashboard onNavigate={setActiveView} />;
       case "activity-log":
-        return <ActivityLog />;
+        return <ActivityLog isNavigating={isNavigating} />;
       case "categorization":
         return <Categorization />;
       case "focus-mode":
@@ -97,7 +111,7 @@ function App() {
     <div className="h-screen bg-background flex overflow-hidden app-draggable">
       {/* Sidebar - Fixed */}
       <div className="no-drag">
-        <Sidebar activeView={activeView} onViewChange={setActiveView} />
+        <Sidebar activeView={activeView} onViewChange={handleViewChange} />
       </div>
 
       {/* Main Content */}

@@ -32,6 +32,13 @@ impl FocusMode {
             return Ok(true); // App is allowed
         }
 
+        // Check if app blocking is enabled
+        let app_blocking_enabled = state.db.get_app_blocking_enabled().await.unwrap_or(true);
+        if !app_blocking_enabled {
+            println!("ℹ️ App blocking disabled by user preference, allowing '{}'", app_name);
+            return Ok(true); // App is allowed
+        }
+
         // Always allow velosi app itself
         if app_name.to_lowercase().contains("velosi")
             || bundle_id.map_or(false, |bid| bid.to_lowercase().contains("velosi"))

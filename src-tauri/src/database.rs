@@ -701,6 +701,61 @@ impl Database {
         Ok(())
     }
 
+    /// Get app blocking enabled status
+    pub async fn get_app_blocking_enabled(&self) -> Result<bool, sqlx::Error> {
+        let row =
+            sqlx::query("SELECT value FROM focus_mode_settings WHERE key = 'app_blocking_enabled'")
+                .fetch_optional(&self.pool)
+                .await?;
+
+        if let Some(row) = row {
+            let value: String = row.get("value");
+            Ok(value == "1")
+        } else {
+            Ok(true) // Default to enabled
+        }
+    }
+
+    /// Set app blocking enabled status
+    pub async fn set_app_blocking_enabled(&self, enabled: bool) -> Result<(), sqlx::Error> {
+        let value = if enabled { "1" } else { "0" };
+        sqlx::query(
+            "INSERT OR REPLACE INTO focus_mode_settings (key, value) VALUES ('app_blocking_enabled', ?)",
+        )
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Get website blocking enabled status
+    pub async fn get_website_blocking_enabled(&self) -> Result<bool, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT value FROM focus_mode_settings WHERE key = 'website_blocking_enabled'",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let value: String = row.get("value");
+            Ok(value == "1")
+        } else {
+            Ok(true) // Default to enabled
+        }
+    }
+
+    /// Set website blocking enabled status
+    pub async fn set_website_blocking_enabled(&self, enabled: bool) -> Result<(), sqlx::Error> {
+        let value = if enabled { "1" } else { "0" };
+        sqlx::query(
+            "INSERT OR REPLACE INTO focus_mode_settings (key, value) VALUES ('website_blocking_enabled', ?)",
+        )
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// Get allowed category IDs for focus mode
     pub async fn get_focus_mode_allowed_categories(&self) -> Result<Vec<String>, sqlx::Error> {
         let rows = sqlx::query(

@@ -68,7 +68,11 @@ interface ActivitySummary {
   top_apps: AppSummary[];
 }
 
-export function ActivityLog() {
+export function ActivityLog({
+  isNavigating = false,
+}: {
+  isNavigating?: boolean;
+}) {
   const today = startOfDay(new Date());
   const [selectedRange, setSelectedRange] = useState<DateRange>({
     startDate: today,
@@ -83,7 +87,7 @@ export function ActivityLog() {
     selectedActivity,
     setSelectedActivity,
   ] = useState<ActivityEntry | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [editingCategory, setEditingCategory] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const { isInitialized, categoryService } = useCategoryService();
@@ -513,10 +517,12 @@ export function ActivityLog() {
       )}
 
       {/* Loading State */}
-      {loading && (
+      {(loading || isNavigating) && (
         <div className="text-center p-8">
           <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading activities...</p>
+          <p className="text-muted-foreground">
+            {isNavigating ? "Loading..." : "Loading activities..."}
+          </p>
         </div>
       )}
 
