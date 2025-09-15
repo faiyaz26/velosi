@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::models::{ActivityEntry, ActivitySummary, TimelineData, UserCategory};
 use crate::tracker::CurrentActivity;
 use crate::tray::TrayManager;
+// // Website blocker is managed in AppState
 use crate::AppState;
 
 // Helper function to get pause info for tray menu
@@ -716,6 +717,24 @@ pub async fn enable_focus_mode(
         )
         .map_err(|e| e.to_string())?;
 
+    // Start website blocker when focus mode is enabled
+    if let Err(e) = start_website_blocking_internal(&state, &app_handle).await {
+        println!("⚠️ Warning: Failed to start website blocker: {}", e);
+
+        // Emit a warning event to the frontend so users know about the permission issue
+        app_handle
+            .emit(
+                "website-blocking-warning",
+                serde_json::json!({
+                    "message": e,
+                    "type": "permission_error"
+                }),
+            )
+            .map_err(|e| e.to_string())?;
+
+        // Don't fail the entire focus mode enable if website blocker fails
+    }
+
     Ok(())
 }
 
@@ -760,6 +779,12 @@ pub async fn disable_focus_mode(
             }),
         )
         .map_err(|e| e.to_string())?;
+
+    // Stop website blocker when focus mode is disabled
+    if let Err(e) = stop_website_blocking_internal(&state).await {
+        println!("⚠️ Warning: Failed to stop website blocker: {}", e);
+        // Don't fail the entire focus mode disable if website blocker fails
+    }
 
     Ok(())
 }
@@ -1288,4 +1313,264 @@ pub async fn hide_focus_overlay(app_handle: AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// =============================================================================
+// WEBSITE BLOCKING COMMANDS
+// =============================================================================
+// Internal helper functions for website blocking
+// =============================================================================
+
+async fn start_website_blocking_internal(
+    state: &State<'_, AppState>,
+    _app_handle: &AppHandle,
+) -> Result<(), String> {
+    // Get URLs to block from database
+    let url_mappings = state
+        .db
+        .get_url_mappings()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    println!("🔍 Total URL mappings found: {}", url_mappings.len());
+    for mapping in &url_mappings {
+        println!(
+            "  📋 URL: {} -> Category: {}",
+            mapping.url_pattern, mapping.category_id
+        );
+    }
+
+    // Filter for distracting categories (social and entertainment)
+    let mut urls_to_block: Vec<String> = url_mappings
+        .into_iter()
+        .filter(|mapping| mapping.category_id == "social" || mapping.category_id == "entertainment")
+        .map(|mapping| mapping.url_pattern)
+        .collect();
+
+    // Add some common test domains for debugging if the list is empty
+    if urls_to_block.is_empty() {
+        println!("⚠️ No URLs found in database for social/entertainment categories. Adding test domains for debugging.");
+        urls_to_block.extend(vec![
+            "facebook.com".to_string(),
+            "twitter.com".to_string(),
+            "instagram.com".to_string(),
+            "youtube.com".to_string(),
+            "tiktok.com".to_string(),
+            "reddit.com".to_string(),
+            "linkedin.com".to_string(),
+        ]);
+    }
+
+    println!(
+        "🚫 URLs to block (social/entertainment): {:?}",
+        urls_to_block
+    );
+
+    let app_state = state.inner();
+
+    // Get the website blocker instance (should be initialized at startup)
+    let blocker = {
+        let website_blocker = app_state
+            .website_blocker
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        website_blocker.clone()
+    }; // MutexGuard dropped here
+
+    if let Some(blocker) = blocker {
+        blocker.enable_website_blocking(urls_to_block).await?;
+        Ok(())
+    } else {
+        Err("Website blocker not initialized at startup".to_string())
+    }
+}
+
+async fn stop_website_blocking_internal(state: &State<'_, AppState>) -> Result<(), String> {
+    let app_state = state.inner();
+
+    // Get the website blocker instance
+    let blocker = {
+        let website_blocker = app_state
+            .website_blocker
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        website_blocker.clone()
+    }; // MutexGuard dropped here
+
+    if let Some(blocker) = blocker {
+        blocker.disable_website_blocking().await?;
+        Ok(())
+    } else {
+        Err("Website blocker not initialized at startup".to_string())
+    }
+}
+
+// =============================================================================
+// Public Tauri commands
+// =============================================================================
+
+#[tauri::command]
+pub async fn start_website_blocker(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    start_website_blocking_internal(&state, &app_handle).await?;
+    Ok("Website blocking started".to_string())
+}
+
+#[tauri::command]
+pub async fn stop_website_blocker(state: State<'_, AppState>) -> Result<String, String> {
+    stop_website_blocking_internal(&state).await?;
+    Ok("Website blocking stopped".to_string())
+}
+
+#[tauri::command]
+pub async fn get_website_blocker_status(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let app_state = state.inner();
+
+    // Get the website blocker instance
+    let blocker = {
+        let website_blocker = app_state
+            .website_blocker
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        website_blocker.clone()
+    }; // MutexGuard dropped here
+
+    let is_active = if let Some(ref blocker) = blocker {
+        blocker.is_blocking().await
+    } else {
+        false
+    };
+
+    // Get proxy info if available
+    let (proxy_address, proxy_port) = if let Some(blocker) = &blocker {
+        let (addr, port) = blocker.get_proxy_info().await;
+        (Some(addr), Some(port))
+    } else {
+        (None, None)
+    };
+
+    Ok(serde_json::json!({
+        "running": is_active,
+        "method": "local_proxy",
+        "platform": std::env::consts::OS,
+        "proxy_address": proxy_address,
+        "proxy_port": proxy_port
+    }))
+}
+
+#[tauri::command]
+pub async fn check_website_blocking_permissions() -> Result<serde_json::Value, String> {
+    let blocker = crate::local_proxy_blocker::LocalProxyBlocker::new();
+
+    match blocker.check_proxy_permissions().await {
+        Ok(()) => Ok(serde_json::json!({
+            "has_permission": true,
+            "message": "Local proxy website blocking is available"
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "has_permission": false,
+            "message": e,
+            "platform": std::env::consts::OS
+        })),
+    }
+}
+
+#[tauri::command]
+pub async fn get_proxy_setup_info(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let app_state = state.inner();
+
+    // Get the website blocker instance
+    let blocker = {
+        let website_blocker = app_state
+            .website_blocker
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        website_blocker.clone()
+    }; // MutexGuard dropped here
+
+    if let Some(blocker) = blocker {
+        let (address, port) = blocker.get_proxy_info().await;
+        let blocked_domains = blocker.get_blocked_domains();
+
+        Ok(serde_json::json!({
+            "proxy_address": address,
+            "proxy_port": port,
+            "blocked_domains": blocked_domains,
+            "setup_instructions": {
+                "macos": [
+                    "1. Go to System Preferences > Network",
+                    "2. Select your active network connection",
+                    "3. Click 'Advanced...' > 'Proxies'",
+                    "4. Check 'Web Proxy (HTTP)' and 'Secure Web Proxy (HTTPS)'",
+                    format!("5. Enter {}:{}", address, port)
+                ],
+                "windows": [
+                    "1. Go to Settings > Network & Internet > Proxy",
+                    "2. Enable 'Use a proxy server'",
+                    format!("3. Enter {}:{}", address, port)
+                ]
+            }
+        }))
+    } else {
+        Err("Website blocker not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn initialize_proxy_server(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<serde_json::Value, String> {
+    let app_state = state.inner();
+
+    // Check if already initialized
+    {
+        let website_blocker = app_state
+            .website_blocker
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        if website_blocker.is_some() {
+            return Ok(serde_json::json!({
+                "success": true,
+                "message": "Proxy server already initialized"
+            }));
+        }
+    }
+
+    // Initialize and start the proxy server
+    println!("🚀 Initializing proxy server...");
+    let proxy_blocker = crate::local_proxy_blocker::LocalProxyBlocker::with_app_handle(app_handle);
+
+    // Start the proxy server
+    if let Err(e) = proxy_blocker.start_proxy_server().await {
+        return Err(format!("Failed to start proxy server: {}", e));
+    }
+
+    let (addr, port) = proxy_blocker.get_proxy_info().await;
+    println!("✅ Proxy server started at {}:{}", addr, port);
+
+    // Store the initialized blocker in the state
+    {
+        let mut website_blocker = app_state
+            .website_blocker
+            .lock()
+            .map_err(|e| e.to_string())?;
+        *website_blocker = Some(proxy_blocker);
+    }
+
+    Ok(serde_json::json!({
+        "success": true,
+        "message": "Proxy server initialized successfully",
+        "proxy_address": addr,
+        "proxy_port": port
+    }))
 }

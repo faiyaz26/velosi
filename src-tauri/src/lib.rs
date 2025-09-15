@@ -2,7 +2,9 @@ mod activity;
 mod cache;
 mod commands;
 mod database;
+mod firewall_blocker;
 mod focus_mode;
+mod local_proxy_blocker;
 mod migrations;
 mod models;
 mod tracker;
@@ -16,6 +18,9 @@ mod focus_mode_tests;
 
 #[cfg(test)]
 mod tracker_tests;
+
+#[cfg(test)]
+mod proxy_integration_tests;
 
 #[cfg(test)]
 mod test_config;
@@ -49,6 +54,8 @@ pub struct AppState {
     app_mappings_cache: Arc<Mutex<Option<Vec<crate::models::AppMapping>>>>,
     // Recently hidden apps to avoid tracking them immediately after hiding
     recently_hidden_apps: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
+    // Website blocker instance
+    website_blocker: Arc<Mutex<Option<local_proxy_blocker::LocalProxyBlocker>>>,
 }
 
 // =============================================================================
@@ -127,7 +134,11 @@ pub fn run() {
                 app_mappings_cache: Arc::new(Mutex::new(None)),
                 app_category_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
                 recently_hidden_apps: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                // Website blocker (initialized at startup)
+                website_blocker: Arc::new(Mutex::new(None)),
             };
+
+            // Website blocker will be initialized on first use via commands
 
             app.manage(state);
 
@@ -215,8 +226,35 @@ pub fn run() {
             commands::get_focus_mode_allowed_apps_detailed,
             commands::remove_focus_mode_allowed_app,
             commands::show_focus_overlay,
-            commands::hide_focus_overlay
+            commands::hide_focus_overlay,
+            // Website blocking commands
+            commands::start_website_blocker,
+            commands::stop_website_blocker,
+            commands::get_website_blocker_status,
+            commands::check_website_blocking_permissions,
+            commands::get_proxy_setup_info,
+            commands::initialize_proxy_server
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::Exit => {
+                println!("🛑 Application is exiting, disabling system proxy...");
+                // Get the app state
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    if let Ok(mut blocker_lock) = state.website_blocker.try_lock() {
+                        if let Some(ref blocker) = *blocker_lock {
+                            // Disable system proxy on exit
+                            let rt = tokio::runtime::Runtime::new().unwrap();
+                            if let Err(e) = rt.block_on(blocker.disable_system_proxy()) {
+                                eprintln!("Failed to disable system proxy on exit: {}", e);
+                            } else {
+                                println!("✅ System proxy disabled on app exit");
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        });
 }

@@ -12,7 +12,6 @@ import {
   AlertCircle,
   CheckCircle2,
   RefreshCw,
-  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +35,25 @@ interface AllowedAppInfo {
   expires_in_minutes: number | null;
 }
 
+interface WebsiteBlockerStatus {
+  running: boolean;
+  method: string;
+  platform: string;
+  proxy_address?: string;
+  proxy_port?: number;
+}
+
+interface BlockedWebsite {
+  url: string;
+  reason: string;
+  timestamp: string;
+}
+
+interface ProxyLog {
+  message: string;
+  timestamp: string;
+}
+
 export function FocusMode() {
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const [allowedCategories, setAllowedCategories] = useState<string[]>([]);
@@ -45,12 +63,22 @@ export function FocusMode() {
   const [blockedApps, setBlockedApps] = useState<BlockedApp[]>([]);
   const [allowedApps, setAllowedApps] = useState<AllowedAppInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshingApps, setRefreshingApps] = useState(false);
+
+  // Website blocking state
+  const [
+    websiteBlockerStatus,
+    setWebsiteBlockerStatus,
+  ] = useState<WebsiteBlockerStatus | null>(null);
+  const [blockedWebsites, setBlockedWebsites] = useState<BlockedWebsite[]>([]);
+  const [websiteBlockingEnabled, setWebsiteBlockingEnabled] = useState(false);
+  const [proxyLogs, setProxyLogs] = useState<ProxyLog[]>([]);
 
   useEffect(() => {
     loadFocusModeStatus();
     loadCategories();
     loadAllowedApps();
+    initializeProxyServer();
+    loadWebsiteBlockerStatus();
     setupEventListeners();
   }, []);
 
@@ -70,6 +98,18 @@ export function FocusMode() {
     await listen("app-temporarily-allowed", () => {
       // Refresh the allowed apps list when an app is temporarily allowed
       loadAllowedApps();
+    });
+
+    // Listen for blocked websites
+    await listen("website-blocked", (event) => {
+      const blockedWebsite = event.payload as BlockedWebsite;
+      setBlockedWebsites((prev) => [blockedWebsite, ...prev.slice(0, 9)]); // Keep last 10
+    });
+
+    // Listen for proxy logs
+    await listen("proxy-log", (event) => {
+      const proxyLog = event.payload as ProxyLog;
+      setProxyLogs((prev) => [proxyLog, ...prev.slice(0, 49)]); // Keep last 50 logs
     });
   };
 
@@ -145,6 +185,40 @@ export function FocusMode() {
       setAllowedCategories(newCategories);
     } catch (error) {
       console.error("Failed to update categories:", error);
+    }
+  };
+
+  const loadWebsiteBlockerStatus = async () => {
+    try {
+      const status = await invoke<WebsiteBlockerStatus>(
+        "get_website_blocker_status"
+      );
+      setWebsiteBlockerStatus(status);
+      setWebsiteBlockingEnabled(status.running);
+    } catch (error) {
+      console.error("Failed to load website blocker status:", error);
+    }
+  };
+
+  const initializeProxyServer = async () => {
+    try {
+      const result = await invoke<{
+        success: boolean;
+        message: string;
+        proxy_address?: string;
+        proxy_port?: number;
+      }>("initialize_proxy_server");
+
+      if (result.success) {
+        console.log("✅ Proxy server initialized:", result.message);
+        if (result.proxy_address && result.proxy_port) {
+          console.log(
+            `📡 Proxy running on ${result.proxy_address}:${result.proxy_port}`
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Failed to initialize proxy server:", error);
     }
   };
 
@@ -276,6 +350,187 @@ export function FocusMode() {
                 ) : null;
               })}
             </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Website Blocking */}
+      <Card className="p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <Shield className="h-5 w-5 text-blue-500" />
+          <h3 className="font-semibold text-foreground">Website Blocking</h3>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-4">
+          Block distracting websites during focus mode. This works by routing
+          traffic through a local proxy.
+        </p>
+
+        <div className="p-3 bg-muted rounded-lg mb-4">
+          <div className="flex items-center space-x-3 mb-3">
+            <div
+              className={cn(
+                "w-3 h-3 rounded-full",
+                websiteBlockerStatus?.proxy_address
+                  ? "bg-green-500"
+                  : "bg-red-500"
+              )}
+            />
+            <div>
+              <p className="font-medium text-foreground">
+                Proxy Server:{" "}
+                {websiteBlockerStatus?.proxy_address
+                  ? "Running"
+                  : "Not Running"}
+              </p>
+              {websiteBlockerStatus?.proxy_address &&
+                websiteBlockerStatus?.proxy_port && (
+                  <p className="text-xs text-muted-foreground">
+                    Address: {websiteBlockerStatus.proxy_address}:
+                    {websiteBlockerStatus.proxy_port}
+                  </p>
+                )}
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <div
+              className={cn(
+                "w-3 h-3 rounded-full",
+                websiteBlockerStatus?.running ? "bg-green-500" : "bg-orange-500"
+              )}
+            />
+            <div>
+              <p className="font-medium text-foreground">
+                Website Blocking:{" "}
+                {websiteBlockerStatus?.running ? "Active" : "Inactive"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {websiteBlockerStatus?.running
+                  ? "System proxy configured - blocking social & entertainment sites"
+                  : "Enable Focus Mode to activate website blocking"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {websiteBlockingEnabled &&
+          websiteBlockerStatus?.proxy_address &&
+          websiteBlockerStatus?.proxy_port && (
+            <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+              <div className="flex items-start space-x-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                    Website Blocking Active
+                  </p>
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    System proxy automatically configured on{" "}
+                    <code>
+                      {websiteBlockerStatus?.proxy_address}:
+                      {websiteBlockerStatus?.proxy_port}
+                    </code>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* Show recent blocked websites */}
+        {blockedWebsites.length > 0 && (
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-foreground mb-2">
+              Recently Blocked Websites
+            </h4>
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {blockedWebsites.map((site, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-950/20 rounded border border-red-200 dark:border-red-800"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-red-700 dark:text-red-300 truncate">
+                      {site.url}
+                    </p>
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      {site.reason}
+                    </p>
+                  </div>
+                  <div className="text-xs text-red-500 ml-2">
+                    {new Date(site.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Proxy Server Logs */}
+      <Card className="p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <RefreshCw className="h-5 w-5 text-blue-500" />
+          <h3 className="font-semibold text-foreground">Proxy Server Logs</h3>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-4">
+          Real-time activity from the proxy server showing blocked and allowed
+          requests.
+        </p>
+
+        {proxyLogs.length > 0 ? (
+          <div className="space-y-2 max-h-64 overflow-y-auto bg-muted/30 rounded-lg p-3">
+            {proxyLogs.map((log, index) => (
+              <div
+                key={index}
+                className="flex items-start space-x-2 text-xs font-mono"
+              >
+                <span className="text-muted-foreground flex-shrink-0">
+                  {new Date(log.timestamp).toLocaleTimeString()}
+                </span>
+                <span
+                  className={cn(
+                    "flex-1",
+                    log.message.includes("BLOCKED")
+                      ? "text-red-600 dark:text-red-400"
+                      : log.message.includes("ALLOWED")
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-foreground"
+                  )}
+                >
+                  {log.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center p-8 text-center bg-muted/30 rounded-lg">
+            <div>
+              <div className="flex justify-center mb-3">
+                <RefreshCw className="h-8 w-8 text-muted-foreground/40" />
+              </div>
+              <h4 className="font-medium text-foreground mb-2">
+                No proxy activity yet
+              </h4>
+              <p className="text-sm text-muted-foreground max-w-md">
+                Proxy server logs will appear here when websites are accessed
+                during focus mode. Enable focus mode to start seeing activity.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {proxyLogs.length > 0 && (
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>Showing last {proxyLogs.length} entries</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setProxyLogs([])}
+              className="h-6 px-2"
+            >
+              Clear Logs
+            </Button>
           </div>
         )}
       </Card>

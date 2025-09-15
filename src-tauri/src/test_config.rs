@@ -34,6 +34,7 @@ pub mod test_utils {
             focus_mode_allowed_apps_cache: Arc::new(Mutex::new(HashMap::new())),
             app_mappings_cache: Arc::new(Mutex::new(None)),
             recently_hidden_apps: Arc::new(Mutex::new(HashMap::new())),
+            website_blocker: Arc::new(Mutex::new(None)),
         }
     }
 
