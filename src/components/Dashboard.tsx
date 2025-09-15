@@ -53,6 +53,15 @@ interface ActivitySummary {
   top_apps: AppSummary[];
 }
 
+interface WebsiteBlockerStatus {
+  running: boolean;
+  system_proxy_enabled: boolean;
+  method: string;
+  platform: string;
+  proxy_address?: string;
+  proxy_port?: number;
+}
+
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -86,12 +95,17 @@ export function Dashboard({
   }>({ is_paused: false, remaining_seconds: 0, is_indefinite: false });
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const [focusModeCategories, setFocusModeCategories] = useState<string[]>([]);
+  const [
+    websiteBlockerStatus,
+    setWebsiteBlockerStatus,
+  ] = useState<WebsiteBlockerStatus | null>(null);
 
   useEffect(() => {
     loadTodaysActivitySummary();
     loadTrackingStatus();
     loadPauseStatus();
     loadFocusModeStatus();
+    loadWebsiteBlockerStatus();
 
     // Listen for tracking status changes from tray or other sources
     const unlistenPromise = listen<boolean>(
@@ -114,18 +128,29 @@ export function Dashboard({
       }
     );
 
-    // Auto-refresh every 90 seconds
+    // Listen for system proxy changes
+    const unlistenSystemProxyPromise = listen<boolean>(
+      "system-proxy-changed",
+      async (event) => {
+        console.log("🔄 System proxy status changed:", event.payload);
+        // Refresh the website blocker status when system proxy changes
+        await loadWebsiteBlockerStatus();
+      }
+    );
+
+    // Auto-refresh every 30 seconds (keep for other data, remove website blocker polling)
     const interval = setInterval(() => {
       loadTodaysActivitySummary();
       loadTrackingStatus();
       loadPauseStatus();
-    }, 90000);
+    }, 30000);
 
     return () => {
       clearInterval(interval);
       // Clean up event listeners
       unlistenPromise.then((unlisten) => unlisten());
       unlistenFocusPromise.then((unlisten) => unlisten());
+      unlistenSystemProxyPromise.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -164,6 +189,17 @@ export function Dashboard({
       setFocusModeCategories(categories);
     } catch (error) {
       console.error("Failed to load focus mode status:", error);
+    }
+  };
+
+  const loadWebsiteBlockerStatus = async () => {
+    try {
+      const status = await invoke<WebsiteBlockerStatus>(
+        "get_website_blocker_status"
+      );
+      setWebsiteBlockerStatus(status);
+    } catch (error) {
+      console.error("Failed to load website blocker status:", error);
     }
   };
 
@@ -464,6 +500,40 @@ export function Dashboard({
                 <Shield className="h-6 w-6 text-gray-500 dark:text-gray-400" />
               )}
             </div>
+
+            {/* Proxy Status */}
+            {focusModeEnabled && (
+              <div className="space-y-2">
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      websiteBlockerStatus?.running
+                        ? "bg-green-500"
+                        : "bg-orange-500"
+                    }`}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Proxy Server:{" "}
+                    {websiteBlockerStatus?.running ? "Running" : "Not Running"}
+                  </p>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      websiteBlockerStatus?.system_proxy_enabled
+                        ? "bg-green-500"
+                        : "bg-red-500"
+                    }`}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    System Proxy:{" "}
+                    {websiteBlockerStatus?.system_proxy_enabled
+                      ? "Enabled"
+                      : "Disabled"}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Focus Mode Control Buttons */}
             <div className="flex gap-2">

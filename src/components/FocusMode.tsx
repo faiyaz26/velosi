@@ -37,6 +37,7 @@ interface AllowedAppInfo {
 
 interface WebsiteBlockerStatus {
   running: boolean;
+  system_proxy_enabled: boolean;
   method: string;
   platform: string;
   proxy_address?: string;
@@ -79,38 +80,74 @@ export function FocusMode() {
     loadAllowedApps();
     initializeProxyServer();
     loadWebsiteBlockerStatus();
-    setupEventListeners();
+
+    let cleanup: (() => void) | undefined;
+    setupEventListeners().then((cleanupFn) => {
+      cleanup = cleanupFn;
+    });
+
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+    };
   }, []);
 
   const setupEventListeners = async () => {
     // Listen for focus mode changes
-    await listen("focus-mode-changed", (event) => {
+    const unlistenFocus = await listen("focus-mode-changed", (event) => {
       setFocusModeEnabled(event.payload as boolean);
     });
 
     // Listen for blocked apps
-    await listen("app-blocked", (event) => {
+    const unlistenBlocked = await listen("app-blocked", (event) => {
       const blockedApp = event.payload as BlockedApp;
       setBlockedApps((prev) => [blockedApp, ...prev.slice(0, 9)]); // Keep last 10
     });
 
     // Listen for temporarily allowed apps
-    await listen("app-temporarily-allowed", () => {
+    const unlistenAllowed = await listen("app-temporarily-allowed", () => {
       // Refresh the allowed apps list when an app is temporarily allowed
       loadAllowedApps();
     });
 
     // Listen for blocked websites
-    await listen("website-blocked", (event) => {
+    const unlistenWebsites = await listen("website-blocked", (event) => {
       const blockedWebsite = event.payload as BlockedWebsite;
       setBlockedWebsites((prev) => [blockedWebsite, ...prev.slice(0, 9)]); // Keep last 10
     });
 
+    // Listen for system proxy changes
+    const unlistenSystemProxy = await listen(
+      "system-proxy-changed",
+      async (event) => {
+        console.log("🔄 System proxy status changed:", event.payload);
+        // Refresh the website blocker status when system proxy changes
+        await loadWebsiteBlockerStatus();
+      }
+    );
+
     // Listen for proxy logs
-    await listen("proxy-log", (event) => {
+    const unlistenProxy = await listen("proxy-log", (event) => {
       const proxyLog = event.payload as ProxyLog;
       setProxyLogs((prev) => [proxyLog, ...prev.slice(0, 49)]); // Keep last 50 logs
     });
+
+    // Auto-refresh website blocker status every 30 seconds (keep for proxy server status)
+    const interval = setInterval(() => {
+      loadWebsiteBlockerStatus();
+    }, 30000);
+
+    // Return cleanup function
+    return () => {
+      unlistenFocus();
+      unlistenBlocked();
+      unlistenAllowed();
+      unlistenWebsites();
+      unlistenProxy();
+      unlistenSystemProxy();
+      clearInterval(interval);
+    };
   };
 
   const loadFocusModeStatus = async () => {
@@ -367,32 +404,6 @@ export function FocusMode() {
         </p>
 
         <div className="p-3 bg-muted rounded-lg mb-4">
-          <div className="flex items-center space-x-3 mb-3">
-            <div
-              className={cn(
-                "w-3 h-3 rounded-full",
-                websiteBlockerStatus?.proxy_address
-                  ? "bg-green-500"
-                  : "bg-red-500"
-              )}
-            />
-            <div>
-              <p className="font-medium text-foreground">
-                Proxy Server:{" "}
-                {websiteBlockerStatus?.proxy_address
-                  ? "Running"
-                  : "Not Running"}
-              </p>
-              {websiteBlockerStatus?.proxy_address &&
-                websiteBlockerStatus?.proxy_port && (
-                  <p className="text-xs text-muted-foreground">
-                    Address: {websiteBlockerStatus.proxy_address}:
-                    {websiteBlockerStatus.proxy_port}
-                  </p>
-                )}
-            </div>
-          </div>
-
           <div className="flex items-center space-x-3">
             <div
               className={cn(
@@ -402,39 +413,41 @@ export function FocusMode() {
             />
             <div>
               <p className="font-medium text-foreground">
-                Website Blocking:{" "}
-                {websiteBlockerStatus?.running ? "Active" : "Inactive"}
+                Proxy Server:{" "}
+                {websiteBlockerStatus?.running ? "Running" : "Not Running"}
               </p>
               <p className="text-xs text-muted-foreground">
                 {websiteBlockerStatus?.running
+                  ? "Local proxy server is active on port 62828"
+                  : "Proxy server not initialized"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <div
+              className={cn(
+                "w-3 h-3 rounded-full",
+                websiteBlockerStatus?.system_proxy_enabled
+                  ? "bg-green-500"
+                  : "bg-red-500"
+              )}
+            />
+            <div>
+              <p className="font-medium text-foreground">
+                System Proxy:{" "}
+                {websiteBlockerStatus?.system_proxy_enabled
+                  ? "Enabled"
+                  : "Disabled"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {websiteBlockerStatus?.system_proxy_enabled
                   ? "System proxy configured - blocking social & entertainment sites"
-                  : "Enable Focus Mode to activate website blocking"}
+                  : "System proxy not configured - websites not blocked"}
               </p>
             </div>
           </div>
         </div>
-
-        {websiteBlockingEnabled &&
-          websiteBlockerStatus?.proxy_address &&
-          websiteBlockerStatus?.proxy_port && (
-            <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-              <div className="flex items-start space-x-2">
-                <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-green-700 dark:text-green-300">
-                    Website Blocking Active
-                  </p>
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                    System proxy automatically configured on{" "}
-                    <code>
-                      {websiteBlockerStatus?.proxy_address}:
-                      {websiteBlockerStatus?.proxy_port}
-                    </code>
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
 
         {/* Show recent blocked websites */}
         {blockedWebsites.length > 0 && (

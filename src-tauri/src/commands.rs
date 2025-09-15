@@ -680,14 +680,7 @@ pub async fn enable_focus_mode(
     state: State<'_, AppState>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
-    // Persist to database
-    state
-        .db
-        .set_focus_mode_enabled(true)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Update in-memory state
+    // Update in-memory state only (no database persistence)
     {
         let mut focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
         *focus_enabled = true;
@@ -717,6 +710,31 @@ pub async fn enable_focus_mode(
         )
         .map_err(|e| e.to_string())?;
 
+    // Initialize proxy server if not already initialized
+    {
+        let needs_init = {
+            let website_blocker = state.website_blocker.lock().map_err(|e| e.to_string())?;
+            website_blocker.is_none()
+        };
+
+        if needs_init {
+            println!("🚀 Initializing proxy server for focus mode...");
+            let proxy_blocker =
+                crate::local_proxy_blocker::LocalProxyBlocker::with_app_handle(app_handle.clone());
+
+            // Start the proxy server
+            if let Err(e) = proxy_blocker.start_proxy_server().await {
+                println!("❌ Failed to start proxy server: {}", e);
+                return Err(format!("Failed to start proxy server: {}", e));
+            }
+
+            // Store the initialized blocker in the state
+            let mut website_blocker = state.website_blocker.lock().map_err(|e| e.to_string())?;
+            *website_blocker = Some(proxy_blocker);
+            println!("✅ Proxy server initialized for focus mode");
+        }
+    }
+
     // Start website blocker when focus mode is enabled
     if let Err(e) = start_website_blocking_internal(&state, &app_handle).await {
         println!("⚠️ Warning: Failed to start website blocker: {}", e);
@@ -743,14 +761,7 @@ pub async fn disable_focus_mode(
     state: State<'_, AppState>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
-    // Persist to database
-    state
-        .db
-        .set_focus_mode_enabled(false)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Update in-memory state
+    // Update in-memory state only (no database persistence)
     {
         let mut focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
         *focus_enabled = false;
@@ -791,12 +802,9 @@ pub async fn disable_focus_mode(
 
 #[tauri::command]
 pub async fn get_focus_mode_status(state: State<'_, AppState>) -> Result<bool, String> {
-    // Get from database (authoritative source)
-    state
-        .db
-        .get_focus_mode_enabled()
-        .await
-        .map_err(|e| e.to_string())
+    // Get from in-memory state (not persisted)
+    let focus_enabled = state.focus_mode_enabled.lock().map_err(|e| e.to_string())?;
+    Ok(*focus_enabled)
 }
 
 #[tauri::command]
@@ -1448,6 +1456,19 @@ pub async fn get_website_blocker_status(
         false
     };
 
+    // Check if system proxy is enabled
+    let system_proxy_enabled = if let Some(ref blocker) = blocker {
+        match blocker.is_system_proxy_enabled().await {
+            Ok(enabled) => enabled,
+            Err(e) => {
+                println!("⚠️ Failed to check system proxy status: {}", e);
+                false
+            }
+        }
+    } else {
+        false
+    };
+
     // Get proxy info if available
     let (proxy_address, proxy_port) = if let Some(blocker) = &blocker {
         let (addr, port) = blocker.get_proxy_info().await;
@@ -1458,6 +1479,7 @@ pub async fn get_website_blocker_status(
 
     Ok(serde_json::json!({
         "running": is_active,
+        "system_proxy_enabled": system_proxy_enabled,
         "method": "local_proxy",
         "platform": std::env::consts::OS,
         "proxy_address": proxy_address,

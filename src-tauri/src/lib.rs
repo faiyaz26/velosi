@@ -102,11 +102,9 @@ pub fn run() {
                 .block_on(setup_database())
                 .expect("Failed to setup database");
 
-            // Load focus mode preferences from database
+            // Load focus mode preferences from database (but don't load enabled state)
             let db_arc = Arc::new(db);
-            let focus_enabled = rt
-                .block_on(db_arc.get_focus_mode_enabled())
-                .unwrap_or(false);
+            let focus_enabled = false; // Always start with focus mode disabled
             let allowed_categories = rt
                 .block_on(db_arc.get_focus_mode_allowed_categories())
                 .unwrap_or_default();

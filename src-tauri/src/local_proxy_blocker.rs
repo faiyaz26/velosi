@@ -141,6 +141,7 @@ impl LocalProxyBlocker {
                         // Return blocked page
                         let blocked_response = Self::generate_blocked_response(&host);
                         stream.write_all(blocked_response.as_bytes()).await?;
+                        stream.flush().await?;
                         return Ok(());
                     } else {
                         println!("✅ ALLOWED: {}", host);
@@ -184,6 +185,7 @@ impl LocalProxyBlocker {
         );
         let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nBad Request";
         stream.write_all(response.as_bytes()).await?;
+        stream.flush().await?;
         Ok(())
     }
 
@@ -243,6 +245,7 @@ impl LocalProxyBlocker {
 
                 let error_response = "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nConnection failed\r\n";
                 let _ = client_stream.write_all(error_response.as_bytes()).await;
+                let _ = client_stream.flush().await;
                 return Err(Box::new(e));
             }
             Err(_) => {
@@ -258,6 +261,7 @@ impl LocalProxyBlocker {
 
                 let error_response = "HTTP/1.1 504 Gateway Timeout\r\nContent-Type: text/plain\r\n\r\nGateway timeout\r\n";
                 let _ = client_stream.write_all(error_response.as_bytes()).await;
+                let _ = client_stream.flush().await;
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
                     error_msg,
@@ -267,6 +271,7 @@ impl LocalProxyBlocker {
 
         // Send the request to the server
         server_stream.write_all(request.as_bytes()).await?;
+        server_stream.flush().await?;
 
         // Forward response back to client with timeout
         let transfer_timeout = Duration::from_secs(30);
@@ -341,6 +346,7 @@ impl LocalProxyBlocker {
 
                 let error_response = "HTTP/1.1 502 Bad Gateway\r\n\r\n";
                 let _ = client_stream.write_all(error_response.as_bytes()).await;
+                let _ = client_stream.flush().await;
                 return Err(Box::new(e));
             }
             Err(_) => {
@@ -356,6 +362,7 @@ impl LocalProxyBlocker {
 
                 let error_response = "HTTP/1.1 504 Gateway Timeout\r\n\r\n";
                 let _ = client_stream.write_all(error_response.as_bytes()).await;
+                let _ = client_stream.flush().await;
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
                     error_msg,
@@ -366,6 +373,7 @@ impl LocalProxyBlocker {
         // Send connection established response to client
         let response = "HTTP/1.1 200 Connection established\r\n\r\n";
         client_stream.write_all(response.as_bytes()).await?;
+        client_stream.flush().await?;
 
         Self::log_event(
             &proxy_logs,
@@ -460,71 +468,11 @@ impl LocalProxyBlocker {
     }
 
     fn generate_blocked_response(domain: &str) -> String {
-        let html = format!(
-            r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Website Blocked</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-        }}
-        .container {{
-            text-align: center;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 3rem;
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            max-width: 500px;
-        }}
-        .icon {{
-            font-size: 4rem;
-            margin-bottom: 1rem;
-        }}
-        h1 {{
-            font-size: 2rem;
-            margin: 0 0 1rem 0;
-        }}
-        p {{
-            font-size: 1.1rem;
-            opacity: 0.9;
-            margin: 0.5rem 0;
-        }}
-        .domain {{
-            background: rgba(255, 255, 255, 0.2);
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            font-family: monospace;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">🚫</div>
-        <h1>Website Blocked</h1>
-        <p>This website has been blocked by your proxy settings.</p>
-        <div class="domain">{}</div>
-        <p>If you need access to this site, please contact your administrator.</p>
-    </div>
-</body>
-</html>"#,
-            domain
-        );
-
+        let message = format!("Website {} is blocked by proxy settings.", domain);
         format!(
-            "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
-            html.len(),
-            html
+            "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+            message.len(),
+            message
         )
     }
 
@@ -596,6 +544,73 @@ impl LocalProxyBlocker {
         self.start_proxy_server().await
     }
 
+    pub async fn is_system_proxy_enabled(&self) -> Result<bool, String> {
+        #[cfg(target_os = "macos")]
+        {
+            // Check HTTP proxy
+            let output = Command::new("networksetup")
+                .args(&["-getwebproxy", "Wi-Fi"])
+                .output()
+                .map_err(|e| format!("Failed to check HTTP proxy: {}", e))?;
+
+            if !output.status.success() {
+                return Err(format!(
+                    "networksetup HTTP check failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let is_http_enabled = output_str.contains("Enabled: Yes")
+                && output_str.contains("Server: 127.0.0.1")
+                && output_str.contains(&format!("Port: {}", PROXY_PORT));
+
+            // Check HTTPS proxy
+            let output = Command::new("networksetup")
+                .args(&["-getsecurewebproxy", "Wi-Fi"])
+                .output()
+                .map_err(|e| format!("Failed to check HTTPS proxy: {}", e))?;
+
+            if !output.status.success() {
+                return Err(format!(
+                    "networksetup HTTPS check failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let is_https_enabled = output_str.contains("Enabled: Yes")
+                && output_str.contains("Server: 127.0.0.1")
+                && output_str.contains(&format!("Port: {}", PROXY_PORT));
+
+            Ok(is_http_enabled && is_https_enabled)
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let output = Command::new("netsh")
+                .args(&["winhttp", "show", "proxy"])
+                .output()
+                .map_err(|e| format!("Failed to check system proxy: {}", e))?;
+
+            if !output.status.success() {
+                return Err(format!(
+                    "netsh check failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let expected_proxy = format!("127.0.0.1:{}", PROXY_PORT);
+            Ok(output_str.contains(&expected_proxy))
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            Err("System proxy status check not supported on this OS".to_string())
+        }
+    }
+
     pub async fn enable_system_proxy(&self) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
@@ -634,6 +649,12 @@ impl LocalProxyBlocker {
             }
 
             println!("✅ System proxy enabled on macOS");
+
+            // Emit event to notify frontend of proxy status change
+            if let Some(ref app_handle) = self.app_handle {
+                let _ = app_handle.emit("system-proxy-changed", true);
+            }
+
             Ok(())
         }
 
@@ -659,6 +680,12 @@ impl LocalProxyBlocker {
             }
 
             println!("✅ System proxy enabled on Windows");
+
+            // Emit event to notify frontend of proxy status change
+            if let Some(ref app_handle) = self.app_handle {
+                let _ = app_handle.emit("system-proxy-changed", true);
+            }
+
             Ok(())
         }
 
@@ -696,6 +723,12 @@ impl LocalProxyBlocker {
             }
 
             println!("✅ System proxy disabled on macOS");
+
+            // Emit event to notify frontend of proxy status change
+            if let Some(ref app_handle) = self.app_handle {
+                let _ = app_handle.emit("system-proxy-changed", false);
+            }
+
             Ok(())
         }
 
@@ -713,6 +746,12 @@ impl LocalProxyBlocker {
             }
 
             println!("✅ System proxy disabled on Windows");
+
+            // Emit event to notify frontend of proxy status change
+            if let Some(ref app_handle) = self.app_handle {
+                let _ = app_handle.emit("system-proxy-changed", false);
+            }
+
             Ok(())
         }
 
