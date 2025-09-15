@@ -138,6 +138,19 @@ impl LocalProxyBlocker {
                             &app_handle,
                         );
 
+                        // Emit event for frontend notification
+                        if let Some(handle) = &app_handle {
+                            use serde_json::json;
+                            let _ = handle.emit(
+                                "website-blocked",
+                                json!({
+                                    "url": host,
+                                    "reason": "Website blocked by proxy",
+                                    "timestamp": chrono::Utc::now().to_rfc3339()
+                                }),
+                            );
+                        }
+
                         // Return blocked page
                         let blocked_response = Self::generate_blocked_response(&host);
                         stream.write_all(blocked_response.as_bytes()).await?;

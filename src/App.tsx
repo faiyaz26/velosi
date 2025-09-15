@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { ActivityLog } from "@/components/ActivityLog";
@@ -21,6 +22,45 @@ function App() {
   // Initialize category service on app start
   useEffect(() => {
     categoryService.initialize().catch(console.error);
+  }, []);
+
+  // Listen for blocked websites globally for notifications
+  useEffect(() => {
+    const setupWebsiteBlockListener = async () => {
+      const unlisten = await listen("website-blocked", (event) => {
+        const blockedWebsite = event.payload as {
+          url: string;
+          reason: string;
+          timestamp: string;
+        };
+
+        // Show browser notification
+        if (Notification.permission === "granted") {
+          new Notification("Website Blocked", {
+            body: `Access to ${blockedWebsite.url} was blocked`,
+            icon: "/Velosi.png",
+          });
+        } else if (Notification.permission !== "denied") {
+          Notification.requestPermission().then((permission) => {
+            if (permission === "granted") {
+              new Notification("Website Blocked", {
+                body: `Access to ${blockedWebsite.url} was blocked`,
+                icon: "/Velosi.png",
+              });
+            }
+          });
+        }
+      });
+
+      return unlisten;
+    };
+
+    setupWebsiteBlockListener();
+
+    // Cleanup on unmount
+    return () => {
+      setupWebsiteBlockListener().then((unlisten) => unlisten());
+    };
   }, []);
 
   // If this is the overlay window, render only the overlay
