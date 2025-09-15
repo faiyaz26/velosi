@@ -37,5 +37,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/faiyaz26/velosi/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGRjk1QkY0NDA0NjVBNjUKUldTYUZldDg3Y3Jqb1kzLzFLTmZaQ2t0V1B0THVML3JjdmJMOFB6NE1UdUJyazJoVWpPS0hMNUUK"
+    }
   }
 }

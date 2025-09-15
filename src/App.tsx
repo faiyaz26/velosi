@@ -11,6 +11,7 @@ import { Settings } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Minimize2 } from "lucide-react";
 import { categoryService } from "@/lib/categoryService";
+import { updateService } from "@/lib/updateService";
 
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
@@ -22,6 +23,11 @@ function App() {
   // Initialize category service on app start
   useEffect(() => {
     categoryService.initialize().catch(console.error);
+  }, []);
+
+  // Initialize update service on app start
+  useEffect(() => {
+    updateService.checkForUpdatesOnStartup();
   }, []);
 
   // Listen for blocked websites globally for notifications

@@ -93,6 +93,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
@@ -235,7 +236,9 @@ pub fn run() {
             commands::get_website_blocker_status,
             commands::check_website_blocking_permissions,
             commands::get_proxy_setup_info,
-            commands::initialize_proxy_server
+            commands::initialize_proxy_server,
+            commands::get_proxy_port,
+            commands::set_proxy_port
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

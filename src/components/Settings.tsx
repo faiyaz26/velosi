@@ -18,13 +18,16 @@ import {
   Network,
   Moon,
   Sun,
+  Download,
 } from "lucide-react";
+import { updateService } from "@/lib/updateService";
 
 export function Settings() {
   const [hasPermissions, setHasPermissions] = useState<boolean | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [proxyPort, setProxyPort] = useState<string>("62828");
   const [savingProxyPort, setSavingProxyPort] = useState(false);
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("theme");
     if (stored === "light" || stored === "dark") return stored;
@@ -63,6 +66,17 @@ export function Settings() {
   }, [theme]);
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
+  const handleCheckForUpdates = async () => {
+    setCheckingForUpdates(true);
+    try {
+      await updateService.checkForUpdates(false);
+    } catch (error) {
+      console.error("Failed to check for updates:", error);
+    } finally {
+      setCheckingForUpdates(false);
+    }
+  };
 
   const loadProxyPort = async () => {
     try {
@@ -290,6 +304,54 @@ export function Settings() {
                 )}
                 {theme === "dark" ? "Light" : "Dark"} mode
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* App Updates */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              App Updates
+            </CardTitle>
+            <CardDescription>
+              Keep Velosi Tracker up to date with the latest features and
+              improvements
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Check for Updates</p>
+                <p className="text-sm text-muted-foreground">
+                  Manually check for the latest version of Velosi Tracker
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCheckForUpdates}
+                disabled={checkingForUpdates}
+                className="flex items-center gap-2"
+              >
+                {checkingForUpdates ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {checkingForUpdates ? "Checking..." : "Check for Updates"}
+              </Button>
+            </div>
+            <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                <strong>ℹ️ About Updates:</strong>
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                Velosi Tracker automatically checks for updates on startup.
+                Updates are downloaded from our secure GitHub releases and
+                include bug fixes, performance improvements, and new features.
+              </p>
             </div>
           </CardContent>
         </Card>
