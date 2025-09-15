@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
-use url::Url;
 
 #[cfg(target_os = "macos")]
 use std::process::Command;
@@ -660,14 +659,15 @@ impl ActivityTracker {
                 None
             };
 
-            // Extract segment information
+            // Extract segment information BEFORE we move `window_title_str`
             let segment_info =
                 self.extract_segment_info_windows(&better_app_name, &window_title_str);
 
+            // Build the CurrentActivity struct by cloning values as needed to avoid moves
             Some(CurrentActivity {
                 app_name: better_app_name,
                 app_bundle_id: Some(process_id.to_string()),
-                window_title: window_title_str,
+                window_title: window_title_str.clone(),
                 url,
                 timestamp: Utc::now(),
                 segment_info,
