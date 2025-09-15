@@ -8,6 +8,7 @@ mod proxy_integration_tests {
         LocalProxyBlocker::new()
     }
 
+    #[allow(dead_code)]
     pub async fn make_http_request_through_proxy(
         proxy_host: &str,
         proxy_port: u16,
@@ -38,6 +39,7 @@ mod proxy_integration_tests {
         Ok(response)
     }
 
+    #[allow(dead_code)]
     pub async fn make_https_connect_through_proxy(
         proxy_host: &str,
         proxy_port: u16,
@@ -73,7 +75,7 @@ mod proxy_integration_tests {
         let proxy = create_test_proxy().await;
 
         // Start proxy server on a test port
-        let test_port = 62829;
+        let _test_port = 62829;
         let proxy_clone = proxy.clone();
         tokio::spawn(async move {
             proxy_clone.start_proxy_server().await.unwrap();

@@ -1,3 +1,4 @@
+use crate::database::Database;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,8 +9,8 @@ use tokio::sync::Mutex;
 
 const PROXY_PORT: u16 = 62828;
 
-// List of manually blocked domains
-const BLOCKED_DOMAINS: &[&str] = &[
+// List of manually blocked domains (fallback if database is empty)
+const FALLBACK_BLOCKED_DOMAINS: &[&str] = &[
     "facebook.com",
     "www.facebook.com",
     "fb.com",
@@ -21,25 +22,107 @@ const BLOCKED_DOMAINS: &[&str] = &[
 #[derive(Clone)]
 pub struct LocalProxyBlocker {
     app_handle: Option<AppHandle>,
+    database: Option<Arc<Database>>,
     proxy_logs: Arc<Mutex<Vec<String>>>,
+    blocked_domains: Arc<Mutex<Vec<String>>>,
 }
 
 impl LocalProxyBlocker {
     pub fn new() -> Self {
         Self {
             app_handle: None,
+            database: None,
             proxy_logs: Arc::new(Mutex::new(Vec::new())),
+            blocked_domains: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn with_app_handle(app_handle: AppHandle) -> Self {
         Self {
             app_handle: Some(app_handle),
+            database: None,
             proxy_logs: Arc::new(Mutex::new(Vec::new())),
+            blocked_domains: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn with_database(mut self, database: Arc<Database>) -> Self {
+        self.database = Some(database);
+        self
+    }
+
+    pub async fn load_blocked_domains(&self) -> Result<(), String> {
+        if let Some(ref db) = self.database {
+            match db.get_url_mappings().await {
+                Ok(mappings) => {
+                    // Filter for distracting categories (social and entertainment)
+                    let blocked_domains: Vec<String> = mappings
+                        .into_iter()
+                        .filter(|mapping| {
+                            mapping.category_id == "social"
+                                || mapping.category_id == "entertainment"
+                        })
+                        .map(|mapping| mapping.url_pattern)
+                        .collect();
+
+                    // Use fallback domains if no mappings found
+                    let final_domains = if blocked_domains.is_empty() {
+                        println!("⚠️ No URL mappings found in database, using fallback domains");
+                        FALLBACK_BLOCKED_DOMAINS
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect()
+                    } else {
+                        blocked_domains
+                    };
+
+                    // Update the blocked domains
+                    {
+                        let mut domains = self.blocked_domains.lock().await;
+                        *domains = final_domains.clone();
+                    }
+
+                    println!(
+                        "✅ Loaded {} blocked domains from database",
+                        final_domains.len()
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("❌ Failed to load URL mappings from database: {}", e);
+                    // Use fallback domains
+                    let fallback_domains: Vec<String> = FALLBACK_BLOCKED_DOMAINS
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    {
+                        let mut domains = self.blocked_domains.lock().await;
+                        *domains = fallback_domains;
+                    }
+                    Ok(())
+                }
+            }
+        } else {
+            println!("⚠️ No database connection, using fallback domains");
+            // Use fallback domains
+            let fallback_domains: Vec<String> = FALLBACK_BLOCKED_DOMAINS
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            {
+                let mut domains = self.blocked_domains.lock().await;
+                *domains = fallback_domains;
+            }
+            Ok(())
         }
     }
 
     pub async fn start_proxy_server(&self) -> Result<(), String> {
+        // Load blocked domains from database
+        if let Err(e) = self.load_blocked_domains().await {
+            println!("⚠️ Failed to load blocked domains: {}", e);
+        }
+
         // Try to bind to the fixed port
         let listener = TcpListener::bind(format!("127.0.0.1:{}", PROXY_PORT))
             .await
@@ -56,6 +139,7 @@ impl LocalProxyBlocker {
 
         let app_handle = self.app_handle.clone();
         let proxy_logs = self.proxy_logs.clone();
+        let blocked_domains = self.blocked_domains.clone();
 
         tokio::spawn(async move {
             while let Ok((stream, addr)) = listener.accept().await {
@@ -70,9 +154,12 @@ impl LocalProxyBlocker {
 
                 let app_handle = app_handle.clone();
                 let proxy_logs = proxy_logs.clone();
+                let blocked_domains = blocked_domains.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = Self::handle_client(stream, app_handle, proxy_logs).await {
+                    if let Err(e) =
+                        Self::handle_client(stream, app_handle, proxy_logs, blocked_domains).await
+                    {
                         eprintln!("Error handling client: {}", e);
                     }
                 });
@@ -86,6 +173,7 @@ impl LocalProxyBlocker {
         mut stream: TcpStream,
         app_handle: Option<AppHandle>,
         proxy_logs: Arc<Mutex<Vec<String>>>,
+        blocked_domains: Arc<Mutex<Vec<String>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut buffer = [0; 4096];
 
@@ -127,8 +215,11 @@ impl LocalProxyBlocker {
                 if let Some(host) = Self::extract_host_from_url(url) {
                     println!("🏠 Extracted host: {}", host);
 
+                    // Get current blocked domains
+                    let current_blocked_domains = blocked_domains.lock().await.clone();
+
                     // Check if domain should be blocked
-                    if Self::is_domain_blocked(&host) {
+                    if Self::is_domain_blocked(&current_blocked_domains, &host) {
                         println!("🚫 BLOCKED: {}", host);
                         Self::log_event(
                             &proxy_logs,
@@ -169,7 +260,11 @@ impl LocalProxyBlocker {
                         // Handle CONNECT method (HTTPS)
                         if method == "CONNECT" {
                             return Self::handle_https_connect(
-                                stream, host, app_handle, proxy_logs,
+                                stream,
+                                host,
+                                app_handle,
+                                proxy_logs,
+                                blocked_domains,
                             )
                             .await;
                         }
@@ -181,6 +276,7 @@ impl LocalProxyBlocker {
                             host,
                             app_handle,
                             proxy_logs,
+                            blocked_domains,
                         )
                         .await;
                     }
@@ -202,16 +298,16 @@ impl LocalProxyBlocker {
         Ok(())
     }
 
-    fn is_domain_blocked(host: &str) -> bool {
+    fn is_domain_blocked(blocked_domains: &[String], host: &str) -> bool {
         let clean_host = host.split(':').next().unwrap_or(host).to_lowercase();
 
         // Check exact matches
-        if BLOCKED_DOMAINS.contains(&clean_host.as_str()) {
+        if blocked_domains.contains(&clean_host) {
             return true;
         }
 
         // Check if any blocked domain is a suffix (for subdomains)
-        for blocked_domain in BLOCKED_DOMAINS {
+        for blocked_domain in blocked_domains {
             if clean_host == *blocked_domain
                 || clean_host.ends_with(&format!(".{}", blocked_domain))
             {
@@ -228,6 +324,7 @@ impl LocalProxyBlocker {
         host: String,
         app_handle: Option<AppHandle>,
         proxy_logs: Arc<Mutex<Vec<String>>>,
+        _blocked_domains: Arc<Mutex<Vec<String>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("🌐 Forwarding HTTP request to: {}", host);
 
@@ -329,6 +426,7 @@ impl LocalProxyBlocker {
         host: String,
         app_handle: Option<AppHandle>,
         proxy_logs: Arc<Mutex<Vec<String>>>,
+        _blocked_domains: Arc<Mutex<Vec<String>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("🔒 Establishing HTTPS tunnel to: {}", host);
 
@@ -518,13 +616,9 @@ impl LocalProxyBlocker {
         }
     }
 
-    pub async fn get_proxy_logs(&self) -> Vec<String> {
-        let logs = self.proxy_logs.lock().await;
-        logs.clone()
-    }
-
-    pub fn get_blocked_domains(&self) -> Vec<String> {
-        BLOCKED_DOMAINS.iter().map(|s| s.to_string()).collect()
+    pub async fn get_blocked_domains(&self) -> Vec<String> {
+        let domains = self.blocked_domains.lock().await;
+        domains.clone()
     }
 
     pub async fn get_proxy_info(&self) -> (String, u16) {
@@ -551,10 +645,6 @@ impl LocalProxyBlocker {
         self.disable_system_proxy().await?;
         println!("✅ Website blocking disabled, system proxy removed");
         Ok(())
-    }
-
-    pub async fn start_proxy_server_only(&self) -> Result<(), String> {
-        self.start_proxy_server().await
     }
 
     pub async fn is_system_proxy_enabled(&self) -> Result<bool, String> {

@@ -2,7 +2,6 @@ mod activity;
 mod cache;
 mod commands;
 mod database;
-mod firewall_blocker;
 mod focus_mode;
 mod local_proxy_blocker;
 mod migrations;
@@ -240,7 +239,7 @@ pub fn run() {
                 println!("🛑 Application is exiting, disabling system proxy...");
                 // Get the app state
                 if let Some(state) = app_handle.try_state::<AppState>() {
-                    if let Ok(mut blocker_lock) = state.website_blocker.try_lock() {
+                    if let Ok(blocker_lock) = state.website_blocker.try_lock() {
                         if let Some(ref blocker) = *blocker_lock {
                             // Disable system proxy on exit
                             let rt = tokio::runtime::Runtime::new().unwrap();

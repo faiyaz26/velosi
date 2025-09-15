@@ -674,6 +674,7 @@ impl Database {
     // Focus Mode Database Functions
 
     /// Get focus mode enabled status
+    #[allow(dead_code)]
     pub async fn get_focus_mode_enabled(&self) -> Result<bool, sqlx::Error> {
         let row = sqlx::query("SELECT value FROM focus_mode_settings WHERE key = 'enabled'")
             .fetch_optional(&self.pool)
@@ -688,6 +689,7 @@ impl Database {
     }
 
     /// Set focus mode enabled status
+    #[allow(dead_code)]
     pub async fn set_focus_mode_enabled(&self, enabled: bool) -> Result<(), sqlx::Error> {
         let value = if enabled { "1" } else { "0" };
         sqlx::query(

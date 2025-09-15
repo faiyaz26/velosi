@@ -1,6 +1,7 @@
 // Test configuration and utilities for Velosi Tracker tests
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub mod test_utils {
     use crate::database::Database;
     use crate::models::*;
@@ -39,6 +40,7 @@ pub mod test_utils {
     }
 
     /// Creates a mock Tauri app with test state
+    #[allow(dead_code)]
     pub async fn create_mock_app_with_state() -> (tauri::App<MockRuntime>, AppState) {
         let db = create_test_database().await;
         let state = create_test_app_state(db);

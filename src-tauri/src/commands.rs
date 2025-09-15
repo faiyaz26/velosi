@@ -720,7 +720,8 @@ pub async fn enable_focus_mode(
         if needs_init {
             println!("🚀 Initializing proxy server for focus mode...");
             let proxy_blocker =
-                crate::local_proxy_blocker::LocalProxyBlocker::with_app_handle(app_handle.clone());
+                crate::local_proxy_blocker::LocalProxyBlocker::with_app_handle(app_handle.clone())
+                    .with_database(state.db.clone());
 
             // Start the proxy server
             if let Err(e) = proxy_blocker.start_proxy_server().await {
@@ -1520,7 +1521,7 @@ pub async fn get_proxy_setup_info(state: State<'_, AppState>) -> Result<serde_js
 
     if let Some(blocker) = blocker {
         let (address, port) = blocker.get_proxy_info().await;
-        let blocked_domains = blocker.get_blocked_domains();
+        let blocked_domains = blocker.get_blocked_domains().await;
 
         Ok(serde_json::json!({
             "proxy_address": address,
@@ -1570,7 +1571,8 @@ pub async fn initialize_proxy_server(
 
     // Initialize and start the proxy server
     println!("🚀 Initializing proxy server...");
-    let proxy_blocker = crate::local_proxy_blocker::LocalProxyBlocker::with_app_handle(app_handle);
+    let proxy_blocker = crate::local_proxy_blocker::LocalProxyBlocker::with_app_handle(app_handle)
+        .with_database(app_state.db.clone());
 
     // Start the proxy server
     if let Err(e) = proxy_blocker.start_proxy_server().await {
