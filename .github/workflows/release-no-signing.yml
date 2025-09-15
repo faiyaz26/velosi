@@ -88,6 +88,8 @@ jobs:
   create-release:
     needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -104,6 +106,13 @@ jobs:
           name: windows-artifacts
           path: artifacts/windows
 
+      - name: Debug - List downloaded artifacts
+        run: |
+          echo "=== macOS artifacts ==="
+          find artifacts/macos -type f -name "*" 2>/dev/null || echo "No macOS artifacts found"
+          echo "=== Windows artifacts ==="
+          find artifacts/windows -type f -name "*" 2>/dev/null || echo "No Windows artifacts found"
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -112,8 +121,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/macos/velosi
-            artifacts/windows/velosi.exe
+            artifacts/macos/*
+            artifacts/windows/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
