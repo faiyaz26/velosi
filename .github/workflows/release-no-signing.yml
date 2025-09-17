@@ -36,18 +36,20 @@ jobs:
           pnpm install
 
       - name: Build for macOS (Intel)
-        run: pnpm tauri build --target x86_64-apple-darwin --no-bundle
+        run: pnpm tauri build --target x86_64-apple-darwin
 
       - name: Build for macOS (Apple Silicon)
-        run: pnpm tauri build --target aarch64-apple-darwin --no-bundle
+        run: pnpm tauri build --target aarch64-apple-darwin
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-artifacts
           path: |
-            src-tauri/target/x86_64-apple-darwin/release/velosi
-            src-tauri/target/aarch64-apple-darwin/release/velosi
+            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
 
   build-windows:
     runs-on: windows-latest
@@ -76,14 +78,15 @@ jobs:
           pnpm install
 
       - name: Build for Windows
-        run: pnpm tauri build --no-bundle
+        run: pnpm tauri build
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
           path: |
-            src-tauri/target/release/velosi.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
 
   create-release:
     needs: [build-macos, build-windows]
