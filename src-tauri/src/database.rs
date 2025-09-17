@@ -433,7 +433,82 @@ impl Database {
         Ok(())
     }
 
+    pub async fn get_user_category_by_id(
+        &self,
+        id: &str,
+    ) -> Result<Option<UserCategory>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, name, color, parent_id, created_at, updated_at
+            FROM user_categories
+            WHERE id = ?1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let created_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("created_at"))
+                    .map_err(|_| sqlx::Error::Decode("Invalid created_at format".into()))?
+                    .with_timezone(&Utc);
+                let updated_at = DateTime::parse_from_rfc3339(&row.get::<String, _>("updated_at"))
+                    .map_err(|_| sqlx::Error::Decode("Invalid updated_at format".into()))?
+                    .with_timezone(&Utc);
+
+                Ok(Some(UserCategory {
+                    id: row.get("id"),
+                    name: row.get("name"),
+                    color: row.get("color"),
+                    parent_id: row.get("parent_id"),
+                    created_at,
+                    updated_at,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
     pub async fn delete_user_category(&self, id: &str) -> Result<(), sqlx::Error> {
+        // First, get the category to check if it's "Unknown"
+        let category = self.get_user_category_by_id(id).await?;
+        if let Some(cat) = category {
+            if cat.name.to_lowercase() == "unknown" {
+                return Err(sqlx::Error::RowNotFound); // Return error for "Unknown" category
+            }
+
+            // Reassign all activities with this category to "Unknown"
+            let unknown_category = crate::models::ActivityCategory::Unknown;
+            sqlx::query(
+                r#"
+                UPDATE activity_entries 
+                SET category = ?1 
+                WHERE category = ?2
+                "#,
+            )
+            .bind(serde_json::to_string(&unknown_category).unwrap())
+            .bind(
+                serde_json::to_string(&crate::models::ActivityCategory::Custom(cat.id.clone()))
+                    .unwrap(),
+            )
+            .execute(&self.pool)
+            .await?;
+
+            // Delete app mappings for this category
+            sqlx::query("DELETE FROM app_mappings WHERE category_id = ?1")
+                .bind(&cat.id)
+                .execute(&self.pool)
+                .await?;
+
+            // Delete URL mappings for this category
+            sqlx::query("DELETE FROM url_mappings WHERE category_id = ?1")
+                .bind(&cat.id)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        // Finally, delete the category
         sqlx::query("DELETE FROM user_categories WHERE id = ?1")
             .bind(id)
             .execute(&self.pool)

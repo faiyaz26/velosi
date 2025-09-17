@@ -281,11 +281,21 @@ pub async fn update_category(
 
 #[tauri::command]
 pub async fn delete_category(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    // Check if this is the "Unknown" category
+    if let Ok(Some(category)) = state.db.get_user_category_by_id(&id).await {
+        if category.name.to_lowercase() == "unknown" {
+            return Err(
+                "Cannot delete the 'Unknown' category as it is required for the system."
+                    .to_string(),
+            );
+        }
+    }
+
     state
         .db
         .delete_user_category(&id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("Failed to delete category: {}", e))
 }
 
 #[tauri::command]

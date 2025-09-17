@@ -63,6 +63,12 @@ function Categorization() {
     string | null
   >(null);
 
+  // Delete confirmation state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(
+    null
+  );
+
   useEffect(() => {
     console.log("Categories component mounted, loading data...");
     loadCategories();
@@ -180,7 +186,41 @@ function Categorization() {
     }
   };
 
-  // delete handler intentionally removed; feature not used in UI at the moment
+  const handleDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+
+    try {
+      console.log("Deleting category:", categoryToDelete.name);
+      await invoke("delete_category", { id: categoryToDelete.id });
+
+      // Refresh all data
+      await loadCategories();
+      await loadAppMappings();
+      await loadUrlMappings();
+
+      // Clear selection if the deleted category was selected
+      if (selectedCategory?.id === categoryToDelete.id) {
+        setSelectedCategory(null);
+      }
+
+      setIsDeleteDialogOpen(false);
+      setCategoryToDelete(null);
+    } catch (error) {
+      console.error("Failed to delete category:", error);
+      alert("Failed to delete category: " + error);
+    }
+  };
+
+  const handleDeleteClick = (category: Category) => {
+    if (category.name.toLowerCase() === "unknown") {
+      alert(
+        "Cannot delete the 'Unknown' category as it is required for the system."
+      );
+      return;
+    }
+    setCategoryToDelete(category);
+    setIsDeleteDialogOpen(true);
+  };
 
   const handleAddApp = async () => {
     if (!selectedCategory || !newAppName.trim()) {
@@ -445,6 +485,19 @@ function Categorization() {
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             {(hasApps || hasUrls) && (
                               <div className="w-2 h-2 bg-green-500 rounded-full" />
+                            )}
+                            {category.name.toLowerCase() !== "unknown" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(category);
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -773,6 +826,38 @@ function Categorization() {
             </Button>
             <Button onClick={() => handleAddCategory(true)}>
               Add Subcategory
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Category</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the category "
+              {categoryToDelete?.name}"? This action cannot be undone.
+              <br />
+              <br />
+              <strong>Note:</strong> Any activities currently assigned to this
+              category will be automatically reassigned to the "Unknown"
+              category.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setCategoryToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteCategory}>
+              Delete Category
             </Button>
           </DialogFooter>
         </DialogContent>
