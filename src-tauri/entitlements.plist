@@ -5,4 +5,47 @@
     <key>com.apple.security.automation.apple-events</key>
     <true/>
 </dict>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.temporary-exception.apple-events</key>
+    <array>
+        <!-- Browsers (tab/window access) -->
+        <string>com.google.Chrome</string>
+        <string>com.google.Chrome.canary</string>
+        <string>com.google.Chrome.beta</string>
+        <string>com.google.Chrome.dev</string>
+        <string>com.apple.Safari</string>
+        <string>com.apple.SafariTechnologyPreview</string>
+        <string>org.mozilla.firefox</string>
+        <string>org.mozilla.firefoxdeveloperedition</string>
+        <string>com.microsoft.edgemac</string>
+        <string>com.operasoftware.Opera</string>
+        <string>com.brave.Browser</string>
+        <string>org.chromium.Chromium</string>
+
+        <!-- Development tools / editors (window titles) -->
+        <string>com.microsoft.VSCode</string>
+        <string>com.microsoft.VSCodeInsiders</string>
+        <string>com.sublimetext.4</string>
+        <string>com.sublimetext.3</string>
+        <string>com.apple.dt.Xcode</string>
+
+        <!-- Terminals & Utilities -->
+        <string>com.apple.Terminal</string>
+        <string>com.googlecode.iterm2</string>
+
+        <!-- Communication & collaboration apps -->
+        <string>com.slack.desktop</string>
+        <string>com.microsoft.teams</string>
+        <string>us.zoom.xos</string>
+        <string>com.discord.desktop</string>
+
+        <!-- Productivity / media (where automation may be useful) -->
+        <string>com.apple.Music</string>
+        <string>com.spotify.client</string>
+
+        <!-- Finder / System -->
+        <string>com.apple.finder</string>
+        <string>com.apple.systempreferences</string>
+    </array>
 </plist>
