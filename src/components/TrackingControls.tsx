@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect } from "react";
-import { Play, Pause, Activity } from "lucide-react";
+import { Play, Pause, Activity, Shield } from "lucide-react";
+import { AppleEventsPermissionDialog } from "./AppleEventsPermissionDialog";
 
 interface CurrentActivity {
   app_name: string;
@@ -25,6 +26,23 @@ export function TrackingControls() {
     currentActivity,
     setCurrentActivity,
   ] = useState<CurrentActivity | null>(null);
+  const [hasPermissions, setHasPermissions] = useState<boolean | null>(null);
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
+
+  // Check permissions on component mount
+  useEffect(() => {
+    const checkPermissions = async () => {
+      try {
+        const status = await invoke<boolean>("check_apple_events_permissions");
+        setHasPermissions(status);
+      } catch (error) {
+        console.error("Failed to check permissions:", error);
+        setHasPermissions(false);
+      }
+    };
+
+    checkPermissions();
+  }, []);
 
   useEffect(() => {
     // Check initial tracking status
@@ -60,7 +78,14 @@ export function TrackingControls() {
   }, [isTracking]);
 
   const handleStartTracking = async () => {
+    // Check permissions first
     try {
+      const status = await invoke<boolean>("check_apple_events_permissions");
+      if (!status) {
+        setShowPermissionDialog(true);
+        return;
+      }
+
       await invoke("start_tracking");
       setIsTracking(true);
     } catch (error) {
@@ -78,6 +103,23 @@ export function TrackingControls() {
     }
   };
 
+  const handlePermissionGranted = () => {
+    setHasPermissions(true);
+    setShowPermissionDialog(false);
+    // Automatically start tracking once permissions are granted
+    handleStartTracking();
+  };
+
+  const testChromeAccess = async () => {
+    try {
+      const result = await invoke<string>("test_chrome_access");
+      alert(`Chrome Access Test Result:\n${result}`);
+    } catch (error) {
+      console.error("Chrome test failed:", error);
+      alert(`Chrome test failed: ${error}`);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -90,6 +132,15 @@ export function TrackingControls() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {hasPermissions === false && !isTracking && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-200">
+            <Shield className="h-4 w-4 text-orange-600" />
+            <span className="text-sm">
+              System permission required to track activities
+            </span>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Button
             onClick={handleStartTracking}
@@ -97,7 +148,9 @@ export function TrackingControls() {
             className="flex items-center gap-2"
           >
             <Play className="h-4 w-4" />
-            Start Tracking
+            {hasPermissions === false
+              ? "Grant Permission & Start"
+              : "Start Tracking"}
           </Button>
           <Button
             onClick={handleStopTracking}
@@ -146,7 +199,25 @@ export function TrackingControls() {
             </div>
           </div>
         )}
+
+        {/* Debug test button for Chrome access */}
+        <div className="pt-2 border-t">
+          <Button
+            onClick={testChromeAccess}
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+          >
+            🧪 Test Chrome Access (Debug)
+          </Button>
+        </div>
       </CardContent>
+
+      <AppleEventsPermissionDialog
+        isOpen={showPermissionDialog}
+        onClose={() => setShowPermissionDialog(false)}
+        onPermissionGranted={handlePermissionGranted}
+      />
     </Card>
   );
 }

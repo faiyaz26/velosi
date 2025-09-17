@@ -28,6 +28,7 @@ export function Settings() {
   const [proxyPort, setProxyPort] = useState<string>("62828");
   const [savingProxyPort, setSavingProxyPort] = useState(false);
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
+  const [openingAutomation, setOpeningAutomation] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("theme");
     if (stored === "light" || stored === "dark") return stored;
@@ -47,6 +48,20 @@ export function Settings() {
       setHasPermissions(false);
     } finally {
       setCheckingPermissions(false);
+    }
+  };
+
+  const openAutomationSettings = async () => {
+    setOpeningAutomation(true);
+    try {
+      await invoke("open_automation_settings");
+    } catch (error) {
+      console.error("Failed to open Automation settings:", error);
+      alert(
+        "Failed to open System Settings automatically. Please open System Settings → Privacy & Security → Automation manually."
+      );
+    } finally {
+      setOpeningAutomation(false);
     }
   };
 
@@ -240,6 +255,32 @@ export function Settings() {
                     <strong>💡 Tip:</strong> After granting permissions, click
                     the "Refresh" button above to verify the status.
                   </div>
+                  {/* macOS Automation instructions + open settings button */}
+                  <div className="mt-4 p-3 border rounded bg-yellow-50 dark:bg-yellow-950">
+                    <p className="text-sm font-medium mb-2">macOS Automation</p>
+                    <p className="text-xs text-muted-foreground">
+                      For browser integration (e.g. extracting active tab
+                      titles/URLs), you may also need to grant Automation
+                      permission. Open:
+                    </p>
+                    <p className="text-xs mt-2">
+                      <strong>
+                        System Settings → Privacy & Security → Automation
+                      </strong>
+                    </p>
+                    <div className="mt-3">
+                      <Button
+                        onClick={openAutomationSettings}
+                        disabled={openingAutomation}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {openingAutomation
+                          ? "Opening..."
+                          : "Open System Settings (Automation)"}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -254,6 +295,32 @@ export function Settings() {
                   Accessibility permissions allow the app to monitor which
                   applications you're using and track your productivity.
                 </p>
+                {/* Also show Automation guidance when permissions are present */}
+                <div className="mt-3 p-3 border rounded bg-yellow-50 dark:bg-yellow-950">
+                  <p className="text-sm font-medium mb-1">macOS Automation</p>
+                  <p className="text-xs text-muted-foreground">
+                    For browser integration (extracting active tab titles/URLs),
+                    you may also need to grant Automation permission for
+                    specific apps. Open:
+                  </p>
+                  <p className="text-xs mt-2">
+                    <strong>
+                      System Settings → Privacy & Security → Automation
+                    </strong>
+                  </p>
+                  <div className="mt-3">
+                    <Button
+                      onClick={openAutomationSettings}
+                      disabled={openingAutomation}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {openingAutomation
+                        ? "Opening..."
+                        : "Open System Settings (Automation)"}
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 

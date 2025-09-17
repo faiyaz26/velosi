@@ -238,7 +238,13 @@ pub fn run() {
             commands::get_proxy_setup_info,
             commands::initialize_proxy_server,
             commands::get_proxy_port,
-            commands::set_proxy_port
+            commands::set_proxy_port,
+            // Apple Events permission commands
+            commands::check_apple_events_permissions,
+            commands::trigger_apple_events_permission_request,
+            commands::test_chrome_access,
+            commands::open_automation_settings,
+            commands::reset_apple_events_permissions
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
