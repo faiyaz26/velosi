@@ -21,6 +21,7 @@ jobs:
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -99,6 +100,7 @@ jobs:
             xcrun notarytool submit "$dmg" \
               --apple-id "$APPLE_ID" \
               --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
               --wait
             echo "Stapling $dmg"
             xcrun stapler staple "$dmg"
@@ -218,8 +220,8 @@ jobs:
       - name: Determine tag name
         id: tag_name
         run: |
-          if [ -n "${{ inputs.tag_name }}" ]; then
-            echo "tag=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
           else
             echo "tag=v${{ env.VERSION }}" >> $GITHUB_OUTPUT
           fi
