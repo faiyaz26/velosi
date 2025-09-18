@@ -4,13 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Tag name for the release"
-        required: true
+        description: "Optional tag name for the release. If empty, workflow will use version from src-tauri/tauri.conf.json"
+        required: false
         type: string
 
 jobs:
   build-macos:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - args: '--target aarch64-apple-darwin'
+            arch: 'silicon'
+          - args: '--target x86_64-apple-darwin'
+            arch: 'intel'
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,25 +45,77 @@ jobs:
           npm install -g pnpm
           pnpm install
 
-      - name: Build for macOS (Intel)
-        run: pnpm tauri build --target x86_64-apple-darwin
-        env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+      - name: Ensure `jq` is installed (macOS)
+        run: |
+          which jq || brew install jq
 
-      - name: Build for macOS (Apple Silicon)
-        run: pnpm tauri build --target aarch64-apple-darwin
+      - name: Import Apple Developer Certificate
         env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security find-identity -v -p codesigning build.keychain
 
-      - name: Upload macOS artifacts
+      - name: Verify Certificate
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Apple Development" || true)
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
+          echo "Certificate imported: $CERT_ID"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+        with:
+          args: ${{ matrix.args }}
+
+      - name: Upload macOS artifacts (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
         with:
-          name: macos-artifacts
+          name: macos-artifacts-${{ matrix.arch }}
           path: |
-            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/
-            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/
+            src-tauri/target/*/release/bundle/dmg/
+
+      - name: Notarize and staple macOS DMGs
+        if: always()
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_ISSUER_ID: ${{ secrets.APPLE_API_KEY_ISSUER_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p notarize
+          echo "$APPLE_API_KEY" > /tmp/authkey.p8
+          find src-tauri/target -type f -name "*.dmg" -print0 | while IFS= read -r -d '' dmg; do
+            echo "Processing $dmg"
+            xcrun notarytool submit "$dmg" \
+              --key /tmp/authkey.p8 \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_KEY_ISSUER_ID" \
+              --wait
+            echo "Stapling $dmg"
+            xcrun stapler staple "$dmg"
+            cp "$dmg" notarize/
+          done
+
+      - name: Upload notarized DMGs (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-notarized-${{ matrix.arch }}
+          path: notarize/
 
   build-windows:
     runs-on: windows-latest
@@ -95,6 +157,15 @@ jobs:
             src-tauri/target/release/bundle/msi/
             src-tauri/target/release/bundle/nsis/
 
+      - name: Upload raw Windows artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-raw
+          path: |
+            src-tauri/target/**/*.msi
+            src-tauri/target/**/*.exe
+
   create-release:
     needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
@@ -104,11 +175,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download macOS artifacts
+      - name: Download macOS artifacts (intel)
         uses: actions/download-artifact@v4
         with:
-          name: macos-artifacts
-          path: artifacts/macos
+          name: macos-artifacts-intel
+          path: artifacts/macos/intel
+
+      - name: Download macOS artifacts (silicon)
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts-silicon
+          path: artifacts/macos/silicon
+
+      - name: Download notarized macOS DMGs (intel)
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-notarized-intel
+          path: artifacts/macos-notarized/intel
+
+      - name: Download notarized macOS DMGs (silicon)
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-notarized-silicon
+          path: artifacts/macos-notarized/silicon
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
@@ -116,24 +205,71 @@ jobs:
           name: windows-artifacts
           path: artifacts/windows
 
+      - name: Download raw Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-raw
+          path: artifacts/windows-raw
+
+      - name: Ensure `jq` is installed
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Read version from tauri.conf.json
+        id: read_version
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Determine tag name
+        id: tag_name
+        run: |
+          if [ -n "${{ inputs.tag_name }}" ]; then
+            echo "tag=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v${{ env.VERSION }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create git tag if missing
+        env:
+          TAG: ${{ steps.tag_name.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
       - name: Debug - List downloaded artifacts
         run: |
-          echo "=== macOS artifacts ==="
-          find artifacts/macos -type f -name "*" 2>/dev/null || echo "No macOS artifacts found"
+          echo "=== macOS (intel) artifacts ==="
+          find artifacts/macos/intel -type f -name "*" 2>/dev/null || echo "No macOS intel artifacts found"
+          echo "=== macOS (silicon) artifacts ==="
+          find artifacts/macos/silicon -type f -name "*" 2>/dev/null || echo "No macOS silicon artifacts found"
+          echo "=== macOS notarized (intel) ==="
+          find artifacts/macos-notarized/intel -type f -name "*" 2>/dev/null || echo "No notarized macOS intel artifacts found"
+          echo "=== macOS notarized (silicon) ==="
+          find artifacts/macos-notarized/silicon -type f -name "*" 2>/dev/null || echo "No notarized macOS silicon artifacts found"
           echo "=== Windows artifacts ==="
           find artifacts/windows -type f -name "*" 2>/dev/null || echo "No Windows artifacts found"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ inputs.tag_name }}
-          name: Release ${{ inputs.tag_name }}
+          tag_name: ${{ steps.tag_name.outputs.tag }}
+          name: Release ${{ steps.tag_name.outputs.tag }}
           draft: false
           prerelease: false
           files: |
-            artifacts/macos/*.dmg
+            artifacts/macos-notarized/intel/*.dmg
+            artifacts/macos-notarized/silicon/*.dmg
             artifacts/windows/*.msi
             artifacts/windows/*.exe
+            artifacts/windows-raw/*.msi
+            artifacts/windows-raw/*.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
