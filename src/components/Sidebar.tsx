@@ -1,4 +1,6 @@
 import { useState } from "react";
+// Import Tauri config to read the app version
+import tauriConf from "../../src-tauri/tauri.conf.json";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
@@ -112,7 +114,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       {/* Footer */}
       {!isCollapsed && (
         <div className="p-4 border-t border-border">
-          <p className="text-xs text-muted-foreground">v1.0.0</p>
+          <p className="text-xs text-muted-foreground">v{tauriConf.version}</p>
         </div>
       )}
     </div>

@@ -1,3 +1,5 @@
+use chrono::Utc;
+use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::time::{Duration, Instant};
 
@@ -106,6 +108,27 @@ pub async fn pause_tracking(
             *pause_until = Some(Instant::now() + Duration::from_secs(seconds));
         } else {
             *pause_until = None; // Indefinite pause
+        }
+    }
+
+    // Ensure any ongoing activity is ended so active time stops accruing,
+    // and clear the in-memory current activity so frontend stops showing it as active.
+    {
+        let now = Utc::now();
+        if let Err(e) = state.db.end_current_activity(now).await {
+            eprintln!("Failed to end current activity when pausing: {}", e);
+        }
+
+        if let Ok(mut current_activity) = state.current_activity.lock() {
+            *current_activity = None;
+            if let Err(e) = app_handle.emit("current-activity-changed", json!(null)) {
+                eprintln!(
+                    "Failed to emit current-activity-changed after clearing: {}",
+                    e
+                );
+            }
+        } else {
+            eprintln!("Failed to acquire lock to clear current_activity when pausing");
         }
     }
 

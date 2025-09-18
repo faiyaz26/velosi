@@ -15,7 +15,6 @@ import { Badge } from "./ui/badge";
 import { Switch } from "./ui/switch";
 import { Play, Pause, Square, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { sendNotification } from "@tauri-apps/plugin-notification";
 import { usePomodoro } from "@/contexts/PomodoroContext";
 
 export interface PomodoroSession {

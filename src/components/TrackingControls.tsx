@@ -56,6 +56,14 @@ export function TrackingControls() {
       }
     );
 
+    // Listen for current activity changes emitted from backend
+    const unlistenCurrentPromise = listen<any>(
+      "current-activity-changed",
+      (event) => {
+        setCurrentActivity(event.payload as CurrentActivity | null);
+      }
+    );
+
     // Set up interval to get current activity
     const interval = setInterval(async () => {
       if (isTracking) {
@@ -72,8 +80,9 @@ export function TrackingControls() {
 
     return () => {
       clearInterval(interval);
-      // Clean up event listener
+      // Clean up event listeners
       unlistenPromise.then((unlisten) => unlisten());
+      unlistenCurrentPromise.then((unlisten) => unlisten());
     };
   }, [isTracking]);
 
