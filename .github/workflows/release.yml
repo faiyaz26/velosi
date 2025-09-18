@@ -14,10 +14,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - args: '--target aarch64-apple-darwin'
-            arch: 'silicon'
-          - args: '--target x86_64-apple-darwin'
-            arch: 'intel'
+          - args: "--target aarch64-apple-darwin"
+            arch: "silicon"
+          - args: "--target x86_64-apple-darwin"
+            arch: "intel"
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -91,20 +91,14 @@ jobs:
 
       - name: Notarize and staple macOS DMGs
         if: always()
-        env:
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_KEY_ISSUER_ID: ${{ secrets.APPLE_API_KEY_ISSUER_ID }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p notarize
-          echo "$APPLE_API_KEY" > /tmp/authkey.p8
           find src-tauri/target -type f -name "*.dmg" -print0 | while IFS= read -r -d '' dmg; do
             echo "Processing $dmg"
             xcrun notarytool submit "$dmg" \
-              --key /tmp/authkey.p8 \
-              --key-id "$APPLE_API_KEY_ID" \
-              --issuer "$APPLE_API_KEY_ISSUER_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
               --wait
             echo "Stapling $dmg"
             xcrun stapler staple "$dmg"
@@ -126,7 +120,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
