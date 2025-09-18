@@ -1003,4 +1003,350 @@ impl Database {
         .await?;
         Ok(())
     }
+
+    // Pomodoro session methods
+    pub async fn save_pomodoro_session(
+        &self,
+        session: &crate::models::PomodoroSession,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO pomodoro_sessions (id, session_type, start_time, end_time, duration_minutes, 
+                                         actual_duration_seconds, work_description, completed, 
+                                         focus_mode_enabled, app_tracking_enabled)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "#,
+        )
+        .bind(session.id.to_string())
+        .bind(match session.session_type {
+            crate::models::PomodoroSessionType::Work => "work",
+            crate::models::PomodoroSessionType::Break => "break",
+        })
+        .bind(session.start_time.to_rfc3339())
+        .bind(session.end_time.as_ref().map(|dt| dt.to_rfc3339()))
+        .bind(session.duration_minutes)
+        .bind(session.actual_duration_seconds)
+        .bind(&session.work_description)
+        .bind(if session.completed { 1 } else { 0 })
+        .bind(if session.focus_mode_enabled { 1 } else { 0 })
+        .bind(if session.app_tracking_enabled { 1 } else { 0 })
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_pomodoro_session(
+        &self,
+        session: &crate::models::PomodoroSession,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE pomodoro_sessions 
+            SET session_type = ?2, start_time = ?3, end_time = ?4, duration_minutes = ?5,
+                actual_duration_seconds = ?6, work_description = ?7, completed = ?8,
+                focus_mode_enabled = ?9, app_tracking_enabled = ?10
+            WHERE id = ?1
+            "#,
+        )
+        .bind(session.id.to_string())
+        .bind(match session.session_type {
+            crate::models::PomodoroSessionType::Work => "work",
+            crate::models::PomodoroSessionType::Break => "break",
+        })
+        .bind(session.start_time.to_rfc3339())
+        .bind(session.end_time.as_ref().map(|dt| dt.to_rfc3339()))
+        .bind(session.duration_minutes)
+        .bind(session.actual_duration_seconds)
+        .bind(&session.work_description)
+        .bind(if session.completed { 1 } else { 0 })
+        .bind(if session.focus_mode_enabled { 1 } else { 0 })
+        .bind(if session.app_tracking_enabled { 1 } else { 0 })
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_pomodoro_session_by_id(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<crate::models::PomodoroSession>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, session_type, start_time, end_time, duration_minutes, 
+                   actual_duration_seconds, work_description, completed, 
+                   focus_mode_enabled, app_tracking_enabled
+            FROM pomodoro_sessions 
+            WHERE id = ?1
+            "#,
+        )
+        .bind(id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let session = crate::models::PomodoroSession {
+                id: Uuid::parse_str(&row.get::<String, _>("id")).unwrap(),
+                session_type: match row.get::<String, _>("session_type").as_str() {
+                    "work" => crate::models::PomodoroSessionType::Work,
+                    "break" => crate::models::PomodoroSessionType::Break,
+                    _ => crate::models::PomodoroSessionType::Work,
+                },
+                start_time: DateTime::parse_from_rfc3339(&row.get::<String, _>("start_time"))
+                    .unwrap()
+                    .with_timezone(&Utc),
+                end_time: row.get::<Option<String>, _>("end_time").map(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
+                duration_minutes: row.get("duration_minutes"),
+                actual_duration_seconds: row.get("actual_duration_seconds"),
+                work_description: row.get("work_description"),
+                completed: row.get::<i32, _>("completed") == 1,
+                focus_mode_enabled: row.get::<i32, _>("focus_mode_enabled") == 1,
+                app_tracking_enabled: row.get::<i32, _>("app_tracking_enabled") == 1,
+            };
+            Ok(Some(session))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_pomodoro_sessions(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        session_type: Option<crate::models::PomodoroSessionType>,
+        limit: Option<i64>,
+    ) -> Result<Vec<crate::models::PomodoroSession>, sqlx::Error> {
+        let mut query = String::from(
+            r#"
+            SELECT id, session_type, start_time, end_time, duration_minutes, 
+                   actual_duration_seconds, work_description, completed, 
+                   focus_mode_enabled, app_tracking_enabled
+            FROM pomodoro_sessions 
+            WHERE 1=1
+            "#,
+        );
+
+        let mut bind_params: Vec<String> = Vec::new();
+
+        if let Some(start) = start_date {
+            query.push_str(" AND DATE(start_time) >= ?");
+            bind_params.push(start);
+        }
+
+        if let Some(end) = end_date {
+            query.push_str(" AND DATE(start_time) <= ?");
+            bind_params.push(end);
+        }
+
+        if let Some(s_type) = session_type {
+            query.push_str(" AND session_type = ?");
+            bind_params.push(match s_type {
+                crate::models::PomodoroSessionType::Work => "work".to_string(),
+                crate::models::PomodoroSessionType::Break => "break".to_string(),
+            });
+        }
+
+        query.push_str(" ORDER BY start_time DESC");
+
+        // Apply limit for performance (default to 10)
+        let limit_val = limit.unwrap_or(10);
+        query.push_str(" LIMIT ?");
+        bind_params.push(limit_val.to_string());
+
+        let mut sql_query = sqlx::query(&query);
+        for param in bind_params {
+            sql_query = sql_query.bind(param);
+        }
+
+        let rows = sql_query.fetch_all(&self.pool).await?;
+
+        let sessions = rows
+            .into_iter()
+            .map(|row| crate::models::PomodoroSession {
+                id: Uuid::parse_str(&row.get::<String, _>("id")).unwrap(),
+                session_type: match row.get::<String, _>("session_type").as_str() {
+                    "work" => crate::models::PomodoroSessionType::Work,
+                    "break" => crate::models::PomodoroSessionType::Break,
+                    _ => crate::models::PomodoroSessionType::Work,
+                },
+                start_time: DateTime::parse_from_rfc3339(&row.get::<String, _>("start_time"))
+                    .unwrap()
+                    .with_timezone(&Utc),
+                end_time: row.get::<Option<String>, _>("end_time").map(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .unwrap()
+                        .with_timezone(&Utc)
+                }),
+                duration_minutes: row.get("duration_minutes"),
+                actual_duration_seconds: row.get("actual_duration_seconds"),
+                work_description: row.get("work_description"),
+                completed: row.get::<i32, _>("completed") == 1,
+                focus_mode_enabled: row.get::<i32, _>("focus_mode_enabled") == 1,
+                app_tracking_enabled: row.get::<i32, _>("app_tracking_enabled") == 1,
+            })
+            .collect();
+
+        Ok(sessions)
+    }
+
+    pub async fn delete_pomodoro_session(&self, id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM pomodoro_sessions WHERE id = ?1")
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_pomodoro_settings(
+        &self,
+    ) -> Result<crate::models::PomodoroSettings, sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, work_duration_minutes, break_duration_minutes, enable_focus_mode, 
+                   enable_app_tracking, auto_start_breaks, auto_start_work, updated_at
+            FROM pomodoro_settings 
+            WHERE id = 'default'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let settings = crate::models::PomodoroSettings {
+            id: row.get("id"),
+            work_duration_minutes: row.get("work_duration_minutes"),
+            break_duration_minutes: row.get("break_duration_minutes"),
+            enable_focus_mode: row.get::<i32, _>("enable_focus_mode") == 1,
+            enable_app_tracking: row.get::<i32, _>("enable_app_tracking") == 1,
+            auto_start_breaks: row.get::<i32, _>("auto_start_breaks") == 1,
+            auto_start_work: row.get::<i32, _>("auto_start_work") == 1,
+            updated_at: DateTime::parse_from_rfc3339(&row.get::<String, _>("updated_at"))
+                .unwrap()
+                .with_timezone(&Utc),
+        };
+
+        Ok(settings)
+    }
+
+    pub async fn update_pomodoro_settings(
+        &self,
+        settings: &crate::models::PomodoroSettings,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE pomodoro_settings 
+            SET work_duration_minutes = ?2, break_duration_minutes = ?3, enable_focus_mode = ?4,
+                enable_app_tracking = ?5, auto_start_breaks = ?6, auto_start_work = ?7, updated_at = ?8
+            WHERE id = ?1
+            "#,
+        )
+        .bind(&settings.id)
+        .bind(settings.work_duration_minutes)
+        .bind(settings.break_duration_minutes)
+        .bind(if settings.enable_focus_mode { 1 } else { 0 })
+        .bind(if settings.enable_app_tracking { 1 } else { 0 })
+        .bind(if settings.auto_start_breaks { 1 } else { 0 })
+        .bind(if settings.auto_start_work { 1 } else { 0 })
+        .bind(settings.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_pomodoro_summary(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<crate::models::PomodoroSummary, sqlx::Error> {
+        let mut query = String::from(
+            r#"
+            SELECT 
+                COUNT(*) as total_sessions,
+                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_sessions,
+                SUM(CASE WHEN session_type = 'work' AND completed = 1 THEN COALESCE(actual_duration_seconds, duration_minutes * 60) ELSE 0 END) as total_work_time,
+                SUM(CASE WHEN session_type = 'break' AND completed = 1 THEN COALESCE(actual_duration_seconds, duration_minutes * 60) ELSE 0 END) as total_break_time,
+                AVG(CASE WHEN completed = 1 THEN COALESCE(actual_duration_seconds, duration_minutes * 60) ELSE NULL END) as avg_duration
+            FROM pomodoro_sessions 
+            WHERE 1=1
+            "#,
+        );
+
+        let mut bind_params: Vec<String> = Vec::new();
+
+        if let Some(start) = &start_date {
+            query.push_str(" AND DATE(start_time) >= ?");
+            bind_params.push(start.clone());
+        }
+
+        if let Some(end) = &end_date {
+            query.push_str(" AND DATE(start_time) <= ?");
+            bind_params.push(end.clone());
+        }
+
+        let mut sql_query = sqlx::query(&query);
+        for param in &bind_params {
+            sql_query = sql_query.bind(param);
+        }
+
+        let row = sql_query.fetch_one(&self.pool).await?;
+
+        // Get sessions by date
+        let mut date_query = String::from(
+            r#"
+            SELECT 
+                DATE(start_time) as date,
+                SUM(CASE WHEN session_type = 'work' THEN 1 ELSE 0 END) as work_sessions,
+                SUM(CASE WHEN session_type = 'break' THEN 1 ELSE 0 END) as break_sessions,
+                SUM(CASE WHEN session_type = 'work' AND completed = 1 THEN COALESCE(actual_duration_seconds, duration_minutes * 60) ELSE 0 END) as work_time,
+                SUM(CASE WHEN session_type = 'break' AND completed = 1 THEN COALESCE(actual_duration_seconds, duration_minutes * 60) ELSE 0 END) as break_time
+            FROM pomodoro_sessions 
+            WHERE 1=1
+            "#,
+        );
+
+        if start_date.is_some() {
+            date_query.push_str(" AND DATE(start_time) >= ?");
+        }
+
+        if end_date.is_some() {
+            date_query.push_str(" AND DATE(start_time) <= ?");
+        }
+
+        date_query.push_str(" GROUP BY DATE(start_time) ORDER BY DATE(start_time)");
+
+        let mut date_sql_query = sqlx::query(&date_query);
+        for param in bind_params {
+            date_sql_query = date_sql_query.bind(param);
+        }
+
+        let date_rows = date_sql_query.fetch_all(&self.pool).await?;
+
+        let sessions_by_date = date_rows
+            .into_iter()
+            .map(|row| crate::models::PomodoroDateSummary {
+                date: row.get("date"),
+                work_sessions: row.get("work_sessions"),
+                break_sessions: row.get("break_sessions"),
+                total_work_time_seconds: row.get("work_time"),
+                total_break_time_seconds: row.get("break_time"),
+            })
+            .collect();
+
+        let summary = crate::models::PomodoroSummary {
+            total_sessions: row.get("total_sessions"),
+            completed_sessions: row.get("completed_sessions"),
+            total_work_time_seconds: row.get("total_work_time"),
+            total_break_time_seconds: row.get("total_break_time"),
+            average_session_duration: row.get::<Option<f64>, _>("avg_duration").unwrap_or(0.0),
+            sessions_by_date,
+        };
+
+        Ok(summary)
+    }
 }

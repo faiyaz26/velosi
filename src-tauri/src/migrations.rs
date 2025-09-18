@@ -27,6 +27,16 @@ pub fn get_migrations() -> Vec<Migration> {
             description: "add_blocking_preferences".to_string(),
             sql: include_str!("../migrations/3_add_blocking_preferences.sql").to_string(),
         },
+        Migration {
+            version: 4,
+            description: "add_proxy_port".to_string(),
+            sql: include_str!("../migrations/4_add_proxy_port.sql").to_string(),
+        },
+        Migration {
+            version: 5,
+            description: "create_pomodoro_tables".to_string(),
+            sql: include_str!("../migrations/5_create_pomodoro_tables.sql").to_string(),
+        },
     ]
 }
 

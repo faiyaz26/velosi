@@ -155,6 +155,57 @@ pub struct AppSummary {
     pub percentage: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PomodoroSession {
+    pub id: Uuid,
+    pub session_type: PomodoroSessionType,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub duration_minutes: i32,                // planned duration
+    pub actual_duration_seconds: Option<i32>, // actual time spent (for tracking interruptions)
+    pub work_description: Option<String>,     // optional description of what user was working on
+    pub completed: bool,                      // true if session was completed, false if interrupted
+    pub focus_mode_enabled: bool,
+    pub app_tracking_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PomodoroSessionType {
+    Work,
+    Break,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PomodoroSettings {
+    pub id: String,
+    pub work_duration_minutes: i32,
+    pub break_duration_minutes: i32,
+    pub enable_focus_mode: bool,
+    pub enable_app_tracking: bool,
+    pub auto_start_breaks: bool,
+    pub auto_start_work: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PomodoroSummary {
+    pub total_sessions: i32,
+    pub completed_sessions: i32,
+    pub total_work_time_seconds: i64,
+    pub total_break_time_seconds: i64,
+    pub average_session_duration: f64,
+    pub sessions_by_date: Vec<PomodoroDateSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PomodoroDateSummary {
+    pub date: String, // YYYY-MM-DD format
+    pub work_sessions: i32,
+    pub break_sessions: i32,
+    pub total_work_time_seconds: i64,
+    pub total_break_time_seconds: i64,
+}
+
 impl ActivityCategory {
     #[allow(dead_code)]
     pub fn from_app_name(app_name: &str, _bundle_id: Option<&str>) -> Self {

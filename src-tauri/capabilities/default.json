@@ -12,6 +12,10 @@
     "core:window:allow-hide",
     "core:window:allow-set-focus",
     "core:window:allow-is-visible",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "notification:default",
+    "notification:allow-request-permission",
+    "updater:default",
+    "updater:allow-check"
   ]
 }

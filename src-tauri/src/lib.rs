@@ -94,6 +94,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
@@ -244,7 +245,18 @@ pub fn run() {
             commands::trigger_apple_events_permission_request,
             commands::test_chrome_access,
             commands::open_automation_settings,
-            commands::reset_apple_events_permissions
+            commands::reset_apple_events_permissions,
+            // Pomodoro commands
+            commands::save_pomodoro_session,
+            commands::get_pomodoro_settings,
+            commands::update_pomodoro_settings,
+            commands::get_pomodoro_sessions,
+            commands::get_pomodoro_summary,
+            commands::delete_pomodoro_session,
+            commands::start_pomodoro_session,
+            commands::complete_pomodoro_session,
+            commands::send_pomodoro_notification,
+            commands::test_notification_permissions
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Tag,
   Focus,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,11 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       id: "focus-mode",
       label: "Focus Mode",
       icon: Focus,
+    },
+    {
+      id: "pomodoro",
+      label: "Pomodoro",
+      icon: Timer,
     },
     {
       id: "activity-log",

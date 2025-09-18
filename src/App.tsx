@@ -7,11 +7,13 @@ import { ActivityLog } from "@/components/ActivityLog";
 import Categorization from "@/components/Categorization";
 import { FocusMode } from "@/components/FocusMode";
 import { FocusOverlay } from "@/components/FocusOverlay";
+import { PomodoroPage } from "@/components/PomodoroPage";
 import { Settings } from "@/components/Settings";
 import { Button } from "@/components/ui/button";
 import { Minimize2 } from "lucide-react";
 import { categoryService } from "@/lib/categoryService";
 import { updateService } from "@/lib/updateService";
+import { PomodoroProvider } from "@/contexts/PomodoroContext";
 
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
@@ -105,6 +107,8 @@ function App() {
         return <Categorization />;
       case "focus-mode":
         return <FocusMode />;
+      case "pomodoro":
+        return <PomodoroPage />;
       case "settings":
         return <Settings />;
       default:
@@ -113,35 +117,37 @@ function App() {
   };
 
   return (
-    <div className="h-screen bg-background flex overflow-hidden app-draggable">
-      {/* Sidebar - Fixed */}
-      <div className="no-drag">
-        <Sidebar activeView={activeView} onViewChange={handleViewChange} />
-      </div>
+    <PomodoroProvider>
+      <div className="h-screen bg-background flex overflow-hidden app-draggable">
+        {/* Sidebar - Fixed */}
+        <div className="no-drag">
+          <Sidebar activeView={activeView} onViewChange={handleViewChange} />
+        </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col h-screen">
-        {/* Top bar */}
-        <div className="border-b border-border p-4 flex-shrink-0">
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              onClick={handleMinimize}
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-1 no-drag"
-            >
-              <Minimize2 className="h-4 w-4" />
-            </Button>
-            {/* removed close button - using minimize (hide) only */}
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col h-screen">
+          {/* Top bar */}
+          <div className="border-b border-border p-4 flex-shrink-0">
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                onClick={handleMinimize}
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-1 no-drag"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </Button>
+              {/* removed close button - using minimize (hide) only */}
+            </div>
+          </div>
+
+          {/* Main content area - Scrollable */}
+          <div className="flex-1 p-6 overflow-auto no-drag">
+            {renderActiveView()}
           </div>
         </div>
-
-        {/* Main content area - Scrollable */}
-        <div className="flex-1 p-6 overflow-auto no-drag">
-          {renderActiveView()}
-        </div>
       </div>
-    </div>
+    </PomodoroProvider>
   );
 }
 
