@@ -1,4 +1,4 @@
-name: Release
+name: Release (No Notarize)
 
 on:
   workflow_dispatch:
@@ -90,28 +90,6 @@ jobs:
           path: |
             src-tauri/target/*/release/bundle/dmg/
 
-      # - name: Notarize and staple macOS DMGs
-      #   if: always()
-      #   run: |
-      #     set -euo pipefail
-      #     mkdir -p notarize
-      #     find src-tauri/target -type f -name "*.dmg" -print0 | while IFS= read -r -d '' dmg; do
-      #       echo "Processing $dmg"
-      #       xcrun notarytool submit "$dmg" \
-      #         --apple-id "$APPLE_ID" \
-      #         --password "$APPLE_ID_PASSWORD" \
-      #         --team-id "$APPLE_TEAM_ID" \
-      #         --wait
-      #       echo "Stapling $dmg"
-      #       xcrun stapler staple "$dmg"
-      #       cp "$dmg" notarize/
-      #     done
-      # - name: Upload notarized DMGs (${{ matrix.arch }})
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: macos-notarized-${{ matrix.arch }}}
-      #     path: notarize/
-
   build-windows:
     runs-on: windows-latest
     steps:
@@ -182,18 +160,6 @@ jobs:
           name: macos-artifacts-silicon
           path: artifacts/macos/silicon
 
-      - name: Download notarized macOS DMGs (intel)
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-notarized-intel
-          path: artifacts/macos-notarized/intel
-
-      - name: Download notarized macOS DMGs (silicon)
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-notarized-silicon
-          path: artifacts/macos-notarized/silicon
-
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
@@ -244,10 +210,6 @@ jobs:
           find artifacts/macos/intel -type f -name "*" 2>/dev/null || echo "No macOS intel artifacts found"
           echo "=== macOS (silicon) artifacts ==="
           find artifacts/macos/silicon -type f -name "*" 2>/dev/null || echo "No macOS silicon artifacts found"
-          echo "=== macOS notarized (intel) ==="
-          find artifacts/macos-notarized/intel -type f -name "*" 2>/dev/null || echo "No notarized macOS intel artifacts found"
-          echo "=== macOS notarized (silicon) ==="
-          find artifacts/macos-notarized/silicon -type f -name "*" 2>/dev/null || echo "No notarized macOS silicon artifacts found"
           echo "=== Windows artifacts ==="
           find artifacts/windows -type f -name "*" 2>/dev/null || echo "No Windows artifacts found"
 
@@ -259,8 +221,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/macos-notarized/intel/*.dmg
-            artifacts/macos-notarized/silicon/*.dmg
             artifacts/macos/intel/**/*.dmg
             artifacts/macos/silicon/**/*.dmg
             artifacts/windows/**/*.msi
